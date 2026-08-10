@@ -47,6 +47,8 @@ export default function App() {
   return (
     <div className="app">
       <Header state={state} />
+      {state.warnings?.length > 0 &&
+        <div className="strip warn">⚠ {state.warnings.join(' · ')}</div>}
 
       <div className="main">
         <Preview busy={busy} flash={flash} last={last} />

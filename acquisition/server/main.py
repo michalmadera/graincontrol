@@ -39,7 +39,7 @@ def create_app() -> FastAPI:
         return {**controller.state(), "camera": camera.snapshot(),
                 "data_root": str(config.data_root),
                 "profile_id": config.profile.get("profile_id"),
-                "dummy": controller._use_dummy()}
+                **controller.diagnostics()}
 
     @app.post("/api/session")
     def start_session() -> dict:

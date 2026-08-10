@@ -30,6 +30,12 @@ from .config import Config
 THUMB_LONG = 320
 _SAFE = re.compile(r"[^A-Za-z0-9_-]+")
 
+# Plik strojenia bywa w innym katalogu zależnie od modelu Pi — jak w photoSingle.py.
+TUNING_CANDIDATES = [
+    "/usr/share/libcamera/ipa/rpi/pisp/imx477_scientific.json",  # Pi 5
+    "/usr/share/libcamera/ipa/rpi/vc4/imx477_scientific.json",   # Pi 4
+]
+
 
 def sanitize_label(name: str) -> str:
     """Nazwa etykiety bezpieczna dla katalogu; spacje→_, reszta znaków→_."""
@@ -120,6 +126,29 @@ class CaptureController:
     def _use_dummy(self) -> bool:
         return self.config.force_dummy or shutil.which(self.config.rpicam_still) is None
 
+    def resolve_tuning(self) -> str | None:
+        """Ścieżka profilu, jeśli istnieje; inaczej wykryj (Pi5/Pi4); inaczej None."""
+        configured = self.config.profile.get("tuning_file")
+        if configured and Path(configured).exists():
+            return configured
+        for candidate in TUNING_CANDIDATES:
+            if Path(candidate).exists():
+                return candidate
+        return None
+
+    def diagnostics(self) -> dict:
+        """Stan gotowości do zdjęcia — pokazywany w UI, żeby problem był widać z góry."""
+        tuning = self.resolve_tuning()
+        warnings = []
+        if not self._use_dummy() and tuning is None:
+            warnings.append("brak pliku strojenia scientific — zdjęcia w domyślnym tuningu")
+        return {
+            "dummy": self._use_dummy(),
+            "rpicam_present": shutil.which(self.config.rpicam_still) is not None,
+            "tuning_file": tuning,
+            "warnings": warnings,
+        }
+
     def _command(self, png: Path) -> list[str]:
         p = self.config.profile
         isp = p.get("isp", {})
@@ -127,7 +156,6 @@ class CaptureController:
         red, blue = p["awb_gains"]
         cmd = [self.config.rpicam_still, "-o", str(png), "--encoding", "png",
                "--width", str(w), "--height", str(h),
-               "--tuning-file", p["tuning_file"],
                "--shutter", str(p["shutter_us"]), "--gain", str(p["analogue_gain"]),
                "--awbgains", f"{red},{blue}",
                "--sharpness", str(isp.get("sharpness", 0)),
@@ -136,6 +164,9 @@ class CaptureController:
                "--contrast", str(isp.get("contrast", 1.0)),
                "--brightness", str(isp.get("brightness", 0)),
                "--immediate", "--raw"]   # --raw → DNG obok PNG
+        tuning = self.resolve_tuning()
+        if tuning:
+            cmd += ["--tuning-file", tuning]   # brak → domyślny tuning (jak photoSingle)
         return cmd
 
     async def _rpicam(self, png: Path) -> None:
