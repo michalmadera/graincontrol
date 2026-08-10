@@ -32,3 +32,6 @@ archiwum/
 .env
 .env.local
 .DS_Store
+
+# Fixtures deweloperskie (generowane, atrapa kamery)
+.dev-fixtures/
