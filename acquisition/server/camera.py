@@ -60,7 +60,13 @@ class RpicamBackend:
 
     def _command(self) -> list[str]:
         from .capture import resolve_tuning
+        # Wymuś pełnoklatkowy tryb sensora (binning 2×2 pełnej matrycy), żeby pole
+        # widzenia podglądu odpowiadało zdjęciu. Bez --mode rpicam-vid przy małej
+        # rozdzielczości wybiera przycięty tryb → inny kadr niż finalne PNG.
+        res_w, res_h = self.profile.get("resolution", [4056, 3040])
+        mode = f"{res_w // 2}:{res_h // 2}"          # 2028:1520 dla IMX477
         cmd = [self.rpicam_vid, "-t", "0", "--codec", "mjpeg", "--nopreview",
+               "--mode", mode,
                "--width", str(self.size[0]), "--height", str(self.size[1]),
                "--shutter", str(self.profile["shutter_us"]),
                "--gain", str(self.profile["analogue_gain"]),
