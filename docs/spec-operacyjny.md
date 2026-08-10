@@ -1,4 +1,4 @@
-# Specyfikacja funkcjonalna: KamykAI — system kontroli jakości dostaw kruszywa
+# Specyfikacja funkcjonalna: GrainControl — system kontroli jakości dostaw kruszywa
 
 Wersja: 0.4 | Data: 2026-08-09 | Status: szkic
 Zakres dokumentu: pełny system z oznaczonym MVP
@@ -9,7 +9,7 @@ Zakres dokumentu: pełny system z oznaczonym MVP
 
 Odbiorca kruszywa (producent chemii budowlanej) chce obiektywnie i szybko oceniać jakość dostarczanego surowca w momencie przyjęcia dostawy, zamiast polegać na ocenie wzrokowej magazyniera lub czasochłonnym badaniu laboratoryjnym każdej dostawy.
 
-System KamykAI automatyzuje ocenę: magazynier nasypuje próbkę kamyków do kuwety w komorze pomiarowej, system fotografuje próbkę, analizuje obraz (segmentacja kamieni, klasyfikacja i zliczenie wtrąceń) i zwraca werdykt akceptowalna/nieakceptowalna na podstawie progu ilości wtrąceń.
+System GrainControl automatyzuje ocenę: magazynier nasypuje próbkę kamyków do kuwety w komorze pomiarowej, system fotografuje próbkę, analizuje obraz (segmentacja kamieni, klasyfikacja i zliczenie wtrąceń) i zwraca werdykt akceptowalna/nieakceptowalna na podstawie progu ilości wtrąceń.
 
 Miary sukcesu:
 
@@ -19,7 +19,7 @@ Miary sukcesu:
 
 ### 1.2 Zakres — co obejmuje ten dokument
 
-Dokument specyfikuje trzy komponenty systemu KamykAI:
+Dokument specyfikuje trzy komponenty systemu GrainControl:
 
 1. **Aplikację stacji pomiarowej** na Raspberry Pi z kamerą i ekranem dotykowym (interfejs operatora, wykonywanie zdjęć, komunikacja z serwisem analizującym, buforowanie offline).
 2. **Serwis analizujący** na serwerze PC z GPU (REST API, analiza obrazu, ocena jakości, zapis wyników i archiwizacja zdjęć).

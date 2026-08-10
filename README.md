@@ -70,6 +70,3 @@ torami jest widoczna w drzewie katalogów.
 Warstwa 2 jest zaimplementowana prototypowo poza tym repozytorium (`rpi_cam/analiza3/`).
 Warstwy 1, 3 i 4 są na etapie specyfikacji. Kod nie został jeszcze przeniesiony —
 katalogi warstw zawierają na razie wyłącznie opis zakresu.
-
-Nazwa robocza systemu operacyjnego w [docs/spec-operacyjny.md](docs/spec-operacyjny.md)
-to „KamykAI" — do ujednolicenia z nazwą platformy przy najbliższej rewizji specyfikacji.
