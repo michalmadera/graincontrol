@@ -1,0 +1,23 @@
+{
+  "archive_root": "~/graincontrol-archiwum",
+  "profile_path": "../../profiles/acquisition/P1-scientific-20260810.json",
+  "rpicam_still": "rpicam-still",
+  "operator": "MM",
+  "illuminator_id": "LED-5000K-01",
+  "min_free_captures": 20,
+  "bytes_per_capture": 41943040,
+  "study": {
+    "study_id": "S1-kruszywo-2026",
+    "verdicts": ["OK", "NOK", "graniczny", "nieoceniony"],
+    "protocol_stages": ["A", "B", "C", "D", "E", "F", "inne"],
+    "verdict_reasons_vocabulary": [
+      "za_ciemny",
+      "kremowy",
+      "zazolcony",
+      "zabrudzony",
+      "nieregularny_ksztalt",
+      "zla_frakcja",
+      "obcy_material"
+    ]
+  }
+}

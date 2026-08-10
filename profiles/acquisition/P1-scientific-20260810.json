@@ -1,0 +1,48 @@
+{
+  "profile_id": "P1-scientific-20260810",
+  "camera": "imx477 / RPi HQ",
+  "resolution": [4056, 3040],
+  "shutter_us": 65000,
+  "analogue_gain": 1.0,
+  "awb_gains": [2.36, 2.19],
+  "tuning_file": "/usr/share/libcamera/ipa/rpi/pisp/imx477_scientific.json",
+  "tuning_file_sha256": "0ae91ed9bba8fe99e5fa73cf7e49d5759e3c2c795ff63ac351b84105685c82f4",
+  "isp": {
+    "sharpness": 0,
+    "denoise": "off",
+    "saturation": 1.0,
+    "contrast": 1.0,
+    "brightness": 0
+  },
+  "encoding": "png",
+  "raw": true,
+  "immediate": true,
+  "contract": {
+    "exposure_rel": 0.01,
+    "analogue_gain_rel": 0.01,
+    "colour_gains_rel": 0.01,
+    "digital_gain_abs": 0.01,
+    "ccm_abs": 1e-6,
+    "lux_warn_rel": 0.05
+  },
+  "optics": {
+    "aperture": "f/4",
+    "focus": "zablokowana",
+    "distance_mm": 290
+  },
+  "reference_patches": [
+    { "name": "white", "roi": [3527, 2511, 418, 418] },
+    { "name": "grey",  "roi": [3527, 2009, 418, 418] }
+  ],
+  "focus_roi": null,
+  "calibration": {
+    "flatfield_id": null,
+    "scale_id": null,
+    "colorchart_id": null
+  },
+  "expected": {
+    "white_patch_L": null,
+    "max_dn": null,
+    "focus_metric": null
+  }
+}
