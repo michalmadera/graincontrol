@@ -3,7 +3,10 @@
 
 Ręczna ekspozycja + AWB off + ISP off + scientific tuning (wg rekomendacja.md).
 Ustaw stałe niżej pod swoją scenę.
+
+Domyślnie zapisuje PNG. Flaga --both zapisze dodatkowo DNG (RAW 12-bit) obok PNG.
 """
+import argparse
 from pathlib import Path
 from datetime import datetime
 import subprocess
@@ -34,7 +37,7 @@ def find_tuning_file():
     return None
 
 
-def take_photo(output_path: Path, metadata_path: Path):
+def take_photo(output_path: Path, metadata_path: Path, save_raw=SAVE_RAW):
     tuning = find_tuning_file()
     command = [
         "rpicam-still",
@@ -63,10 +66,11 @@ def take_photo(output_path: Path, metadata_path: Path):
         command += ["--tuning-file", tuning]
     else:
         print("UWAGA: brak imx477_scientific.json — obraz 'upiększony' przez ISP.")
-    if SAVE_RAW:
-        command.append("--raw")
+    if save_raw:
+        command.append("--raw")   # DNG (RAW 12-bit) zapisany obok PNG
 
-    print("Wykonywanie zdjęcia (cała automatyka zablokowana)...")
+    fmt = "PNG + DNG" if save_raw else "PNG"
+    print(f"Wykonywanie zdjęcia ({fmt}, cała automatyka zablokowana)...")
     subprocess.run(command, check=True)
 
 
@@ -79,6 +83,12 @@ def load_metadata(metadata_path: Path) -> dict:
 
 
 def main():
+    ap = argparse.ArgumentParser(description="Jedno zdjęcie Pi HQ Camera (auto zablokowane)")
+    ap.add_argument("--both", action="store_true",
+                    help="zapisz DNG (RAW 12-bit) obok PNG")
+    args = ap.parse_args()
+    save_raw = args.both or SAVE_RAW
+
     print("=== Pi HQ Camera — jedno zdjęcie (auto zablokowane) ===")
     print("Ostrość i przysłonę ustawiasz ręcznie na obiektywie.\n")
     try:
@@ -88,10 +98,12 @@ def main():
         image_path = output_dir / f"hq_capture_{timestamp}.png"
         metadata_path = output_dir / f"hq_capture_{timestamp}_metadata.json"
 
-        take_photo(image_path, metadata_path)
+        take_photo(image_path, metadata_path, save_raw=save_raw)
         m = load_metadata(metadata_path)
 
         print(f"\nZdjęcie: {image_path}")
+        if save_raw:
+            print(f"RAW DNG: {image_path.with_suffix('.dng')}")
         print(f"Metadane: {metadata_path}\n")
         print("Parametry ujęcia (z metadanych — powinny być stałe między zdjęciami):")
         print(f"  ExposureTime: {m.get('ExposureTime')} us")
