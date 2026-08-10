@@ -1,83 +1,74 @@
-"""Serwer UI akwizycji — FastAPI (`uvicorn --workers 1`).
+"""Serwer prostego narzędzia akwizycji — FastAPI + React (apka webowa na cały ekran).
 
-Faza 0: szkielet, konfiguracja, stan stanowiska (§12.12 pasek stanu), podgląd
-MJPEG i szyna zdarzeń, serwowanie bundla React ze `static/`. API sesji/ujęcia
-(§12.11) i ekrany wchodzą w Fazie 1 — tu są tylko fundamenty, na których staną.
+Przepływ: START SESJI → wpisz nazwę (BAD/NICE…) → ZDJĘCIE ×N → zmień nazwę → …
+Zapis PNG+DNG na zamrożonych parametrach do `dane/sesja_.../NAZWA/`.
 
 Uruchomienie:
-    GRAINCONTROL_STATION=acquisition/capture/station.json \\
-    uvicorn acquisition.server.main:app --host 0.0.0.0 --port 8000 --workers 1
+    uvicorn acquisition.server.main:app --host 0.0.0.0 --port 8000
+    # bez kamery (dev):  GRAINCONTROL_DUMMY=1 uvicorn ...
 """
 from __future__ import annotations
 
-import os
-import shutil
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from .camera import CameraManager, make_backend
-from .capture_engine import CaptureEngine
+from .camera import CameraBusy, CameraManager, make_backend
+from .capture import CaptureController
 from .config import load_config
-from .events import EventBus
-from .session import build_router
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
-def _station_path() -> str:
-    env = os.environ.get("GRAINCONTROL_STATION")
-    if env:
-        return env
-    return str(Path(__file__).resolve().parent.parent / "capture" / "station.json")
+class LabelBody(BaseModel):
+    name: str
 
 
 def create_app() -> FastAPI:
-    config = load_config(_station_path())
-    events = EventBus()
-    camera = CameraManager(make_backend(config.profile, config.station))
-    engine = CaptureEngine(config)
+    config = load_config()
+    camera = CameraManager(make_backend(config))
+    controller = CaptureController(config)
 
-    app = FastAPI(title="GrainControl — akwizycja", version="0.0-faza0")
-    app.state.config = config
-    app.state.events = events
-    app.state.camera = camera
-    app.state.engine = engine
+    app = FastAPI(title="GrainControl — akwizycja", version="1.0-prosta")
 
-    @app.get("/api/health")
-    def health() -> dict:
-        return {"status": "ok", "phase": "faza0"}
+    @app.get("/api/state")
+    def state() -> dict:
+        return {**controller.state(), "camera": camera.snapshot(),
+                "data_root": str(config.data_root),
+                "profile_id": config.profile.get("profile_id"),
+                "dummy": controller._use_dummy()}
 
-    @app.get("/api/status")
-    def status() -> dict:
-        """Pasek stanu (§12.12): kamera, dysk, plik strojenia, profil."""
-        archive = config.archive_root
-        # dysk z najbliższego istniejącego rodzica — archiwum może jeszcze nie istnieć
-        probe = archive
-        while not probe.exists() and probe != probe.parent:
-            probe = probe.parent
-        disk = shutil.disk_usage(probe) if probe.exists() else None
-        tuning = Path(config.profile["tuning_file"])
-        return {
-            "profile_id": config.profile_id,
-            "study_id": config.study_id,
-            "operator": config.station.get("operator"),
-            "camera": camera.snapshot(),
-            "archive_root": str(archive),
-            "archive_exists": archive.exists(),
-            "disk_free_gb": round(disk.free / 2**30, 2) if disk else None,
-            "tuning_file": str(tuning),
-            "tuning_present": tuning.exists(),
-            "study": config.station.get("study"),
-            "calibration_missing": [k for k in ("flatfield_id", "scale_id")
-                                    if not config.profile.get("calibration", {}).get(k)],
-        }
+    @app.post("/api/session")
+    def start_session() -> dict:
+        return {**controller.start_session(), "camera": camera.snapshot()}
 
-    @app.get("/api/profile")
-    def profile() -> dict:
-        return config.profile
+    @app.post("/api/label")
+    def set_label(body: LabelBody) -> dict:
+        try:
+            return controller.set_label(body.name)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.post("/api/shoot")
+    async def shoot() -> dict:
+        if controller.session_dir is None or controller.label is None:
+            raise HTTPException(409, "Ustaw sesję i nazwę przed zdjęciem.")
+        try:
+            return await camera.run_exclusive(controller.shoot)
+        except CameraBusy as exc:
+            raise HTTPException(409, str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(500, str(exc))
+
+    @app.get("/api/thumb/{label}/{index}")
+    def thumb(label: str, index: int) -> FileResponse:
+        path = controller.thumb_path(label, index)
+        if path is None:
+            raise HTTPException(404, "Brak miniatury.")
+        return FileResponse(path)
 
     @app.get("/api/preview.mjpg")
     async def preview() -> StreamingResponse:
@@ -85,14 +76,6 @@ def create_app() -> FastAPI:
             camera.preview_stream(),
             media_type="multipart/x-mixed-replace; boundary=frame")
 
-    @app.get("/api/events")
-    async def event_stream() -> StreamingResponse:
-        return StreamingResponse(events.subscribe(), media_type="text/event-stream")
-
-    # API sesji/próbki/ujęcia (§12.11) — przed montowaniem statyki na "/".
-    app.include_router(build_router(app.state))
-
-    # Bundle React serwowany statycznie ze `static/`.
     if STATIC_DIR.exists():
         app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="ui")
 

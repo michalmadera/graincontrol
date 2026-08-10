@@ -1,5 +1,4 @@
-// Klient API akwizycji (§12.11). UI nie trzyma własnego stanu poza bieżącym widokiem —
-// prawda o sesji jest w backendzie (session.json), tu tylko ją odczytujemy.
+// Klient prostego API akwizycji.
 
 async function req(method, path, body) {
   const opts = { method, headers: {} }
@@ -15,23 +14,11 @@ async function req(method, path, body) {
 }
 
 export const api = {
-  status: () => req('GET', '/api/status'),
-  profile: () => req('GET', '/api/profile'),
-  getSession: () => req('GET', '/api/session'),
-  startSession: (body) => req('POST', '/api/session', body),
-  endSession: () => req('DELETE', '/api/session'),
-  declareSample: (body) => req('PUT', '/api/session/sample', body),
-  advanceLayout: () => req('POST', '/api/session/layout'),
-  capture: () => req('POST', '/api/capture'),
-  captures: (session, limit = 20) =>
-    req('GET', `/api/captures?limit=${limit}` + (session ? `&session=${session}` : '')),
+  state: () => req('GET', '/api/state'),
+  startSession: () => req('POST', '/api/session'),
+  setLabel: (name) => req('POST', '/api/label', { name }),
+  shoot: () => req('POST', '/api/shoot'),
 }
 
-// Strumień zdarzeń (SSE): postęp ujęcia, wynik QC, zmiany stanu kamery.
-export function subscribeEvents(onEvent) {
-  const es = new EventSource('/api/events')
-  es.onmessage = (e) => {
-    try { onEvent(JSON.parse(e.data)) } catch { /* ramka powitalna */ }
-  }
-  return () => es.close()
-}
+export const thumbUrl = (label, index) =>
+  `/api/thumb/${encodeURIComponent(label)}/${index}`

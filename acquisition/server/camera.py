@@ -51,15 +51,15 @@ class RpicamBackend:
     Rozdzielczość podglądu jest niższa niż ujęcia, ale parametry ekspozycji/AWB są
     z profilu — obraz na podglądzie odpowiada temu, co zostanie zapisane."""
 
-    def __init__(self, profile: dict, station: dict, size=(1014, 760)) -> None:
+    def __init__(self, profile: dict, rpicam_vid: str = "rpicam-vid",
+                 size=(1014, 760)) -> None:
         self.profile = profile
-        self.station = station
+        self.rpicam_vid = rpicam_vid
         self.size = size
         self._proc: asyncio.subprocess.Process | None = None
 
     def _command(self) -> list[str]:
-        binary = self.station.get("rpicam_vid", "rpicam-vid")
-        cmd = [binary, "-t", "0", "--codec", "mjpeg", "--nopreview",
+        cmd = [self.rpicam_vid, "-t", "0", "--codec", "mjpeg", "--nopreview",
                "--width", str(self.size[0]), "--height", str(self.size[1]),
                "--shutter", str(self.profile["shutter_us"]),
                "--gain", str(self.profile["analogue_gain"]),
@@ -98,12 +98,12 @@ class RpicamBackend:
         self._proc = None
 
 
-def make_backend(profile: dict, station: dict):
+def make_backend(config):
     """rpicam-vid, jeśli jest w systemie; inaczej atrapa (dev/test bez Pi)."""
-    if station.get("camera_backend") == "dummy":
+    if config.force_dummy:
         return DummyBackend()
-    if shutil.which(station.get("rpicam_vid", "rpicam-vid")):
-        return RpicamBackend(profile, station)
+    if shutil.which(config.rpicam_vid):
+        return RpicamBackend(config.profile, config.rpicam_vid)
     return DummyBackend()
 
 

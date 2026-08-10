@@ -33,5 +33,6 @@ archiwum/
 .env.local
 .DS_Store
 
-# Fixtures deweloperskie (generowane, atrapa kamery)
-.dev-fixtures/
+
+# Dane akwizycji (sesje ze zdjęciami) — poza repo
+/dane/

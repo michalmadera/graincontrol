@@ -1,3 +1,8 @@
+> **ODŁOŻONE.** Ten plan opisuje pełne, badawcze UI wg `spec-akwizycji.md §12`
+> (kontrakt §5, QC §6, protokół A–F, kiosk). Zbudowano zamiast tego **proste
+> narzędzie do zbierania zdjęć** — patrz `UI-POSTEP.md` i `server/README.md`.
+> Ten dokument zostaje jako wizja docelowa.
+
 # Plan: UI akwizycji (warstwa 1) — kiosk Chromium + FastAPI + React
 
 Realizacja `docs/spec-akwizycji.md §12`. Cel: aplikacja stanowiska badawczego do

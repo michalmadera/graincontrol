@@ -1,123 +1,167 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { api, subscribeEvents } from './api.js'
-import Session from './Session.jsx'
-import { StartSessionModal, DeclareSampleModal } from './Modals.jsx'
+import { api, thumbUrl } from './api.js'
 
+// Proste narzędzie akwizycji: sesja → nazwa (BAD/NICE…) → seria zdjęć PNG+DNG.
+// Jeden ekran na cały widok. Bez kiosku, bez kontraktu, bez QC.
 export default function App() {
-  const [status, setStatus] = useState(null)
-  const [session, setSession] = useState(null)
-  const [history, setHistory] = useState([])
-  const [modal, setModal] = useState(null)          // 'start' | 'sample' | null
-  const [busy, setBusy] = useState(false)           // trwa ujęcie
-  const [stage, setStage] = useState(null)          // etap ujęcia z SSE
-  const [verdict, setVerdict] = useState(null)      // werdykt ostatniego ujęcia
+  const [state, setState] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [last, setLast] = useState(null)      // ostatnie zapisane {label,index,png}
+  const [flash, setFlash] = useState(null)
   const [error, setError] = useState(null)
-  const sessionId = session?.session_id
+  const [editingLabel, setEditingLabel] = useState(false)
 
-  const refreshStatus = useCallback(async () => {
-    try { setStatus(await api.status()) } catch (e) { setError(e.message) }
+  const refresh = useCallback(async () => {
+    try { setState(await api.state()) } catch (e) { setError(e.message) }
   }, [])
+  useEffect(() => { refresh() }, [refresh])
 
-  const refreshSession = useCallback(async () => {
-    try {
-      const s = await api.getSession()
-      setSession(s)
-      if (s.status === 'open' && s.session_id) {
-        const h = await api.captures(s.session_id, 16)
-        setHistory(h.captures)
-      } else {
-        setHistory([])
-      }
-    } catch (e) { setError(e.message) }
-  }, [])
-
-  useEffect(() => { refreshStatus(); refreshSession() }, [refreshStatus, refreshSession])
-
-  // Pasek stanu odświeżany cyklicznie (kamera, dysk, plik strojenia) — §12.12.
-  useEffect(() => {
-    const t = setInterval(refreshStatus, 3000)
-    return () => clearInterval(t)
-  }, [refreshStatus])
-
-  // Strumień zdarzeń: postęp ujęcia i stan kamery bez odpytywania (§12.11).
-  const stateRef = useRef({ refreshSession, refreshStatus })
-  stateRef.current = { refreshSession, refreshStatus }
-  useEffect(() => subscribeEvents((ev) => {
-    if (ev.kind === 'capture') {
-      setStage(ev.stage)
-      if (ev.stage === 'verdict') {
-        setVerdict(ev)
-        stateRef.current.refreshSession()
-        stateRef.current.refreshStatus()
-      }
-    } else if (ev.kind === 'camera') {
-      setStatus((s) => s ? { ...s, camera: { ...s.camera, state: ev.state } } : s)
-    } else if (['sample', 'layout', 'session'].includes(ev.kind)) {
-      stateRef.current.refreshSession()
-    }
-  }), [])
-
-  async function onCapture() {
-    setBusy(true); setVerdict(null); setStage('preview_stop'); setError(null)
-    try {
-      const v = await api.capture()
-      setVerdict(v)
-    } catch (e) { setError(e.message) }
-    finally { setBusy(false); setStage(null); refreshSession(); refreshStatus() }
-  }
-
-  async function onLayout() {
+  async function startSession() {
     setError(null)
-    try { await api.advanceLayout(); await refreshSession() }
+    try { setState(await api.startSession()); setLast(null); setEditingLabel(true) }
     catch (e) { setError(e.message) }
   }
+  async function setLabel(name) {
+    setError(null)
+    try { setState(await api.setLabel(name)); setEditingLabel(false); setLast(null) }
+    catch (e) { setError(e.message) }
+  }
+  async function shoot() {
+    if (busy) return
+    setBusy(true); setError(null)
+    try {
+      const r = await api.shoot()
+      setLast(r)
+      setState((s) => ({ ...s, counts: r.counts }))
+      setFlash(`zapisano ${r.png}`)
+      setTimeout(() => setFlash(null), 1500)
+    } catch (e) { setError(e.message) }
+    finally { setBusy(false) }
+  }
+
+  if (!state) return <div className="loading">łączenie z kamerą…</div>
+
+  const hasSession = !!state.session
+  const hasLabel = !!state.label
 
   return (
     <div className="app">
-      <Session
-        status={status}
-        session={session}
-        history={history}
-        busy={busy}
-        stage={stage}
-        verdict={verdict}
-        onCapture={onCapture}
-        onLayout={onLayout}
-        onChangeSample={() => setModal('sample')}
-        onStartSession={() => setModal('start')}
-        onEndSession={async () => {
-          if (!confirm('Zamknąć sesję i wygenerować raport?')) return
-          try { await api.endSession(); setVerdict(null); await refreshSession() }
-          catch (e) { setError(e.message) }
-        }}
-        onDismissVerdict={() => setVerdict(null)}
-      />
+      <Header state={state} />
 
-      {error && (
-        <div className="toast error" onClick={() => setError(null)}>{error} ✕</div>
-      )}
+      <div className="main">
+        <Preview busy={busy} flash={flash} last={last} />
 
-      {modal === 'start' && (
-        <StartSessionModal
-          status={status}
-          onClose={() => setModal(null)}
-          onSubmit={async (body) => {
-            try { await api.startSession(body); setModal(null); await refreshSession() }
-            catch (e) { setError(e.message) }
-          }}
-        />
+        <aside className="side">
+          {!hasSession ? (
+            <StartCard onStart={startSession} dataRoot={state.data_root} />
+          ) : (editingLabel || !hasLabel) ? (
+            <LabelInput current={state.label} onSet={setLabel}
+              onCancel={hasLabel ? () => setEditingLabel(false) : null} />
+          ) : (
+            <ShootPanel state={state} busy={busy} last={last}
+              onShoot={shoot} onChangeLabel={() => setEditingLabel(true)} />
+          )}
+          <Counts counts={state.counts} active={state.label} />
+        </aside>
+      </div>
+
+      {error && <div className="toast error" onClick={() => setError(null)}>{error} ✕</div>}
+    </div>
+  )
+}
+
+function Header({ state }) {
+  const cam = state.camera?.state || '—'
+  const camOk = cam === 'idle' || cam === 'preview'
+  return (
+    <header className="header">
+      <div className="hleft">
+        {state.session
+          ? <><b>{state.session}</b>{state.label && <> · nazwa <b className="lab">{state.label}</b></>}</>
+          : <b>Brak sesji</b>}
+      </div>
+      <div className="hright">
+        {state.dummy && <span className="badge">ATRAPA (bez kamery)</span>}
+        <span className={`cam ${camOk ? 'ok' : 'warn'}`}>● kamera {cam}</span>
+      </div>
+    </header>
+  )
+}
+
+function Preview({ busy, flash, last }) {
+  return (
+    <div className="preview">
+      <img src="/api/preview.mjpg" alt="podgląd na żywo" />
+      <div className="pv-caption">PODGLĄD NA ŻYWO</div>
+      {flash && <div className="flash">{flash}</div>}
+      {busy && <div className="pv-overlay"><div className="spinner" /><div>zdjęcie…</div></div>}
+    </div>
+  )
+}
+
+function StartCard({ onStart, dataRoot }) {
+  return (
+    <div className="card center">
+      <p>Rozpocznij sesję — utworzy się folder <code>sesja_…</code> w:</p>
+      <code className="path">{dataRoot}</code>
+      <button className="big primary" onClick={onStart}>START SESJI</button>
+    </div>
+  )
+}
+
+function LabelInput({ current, onSet, onCancel }) {
+  const [name, setName] = useState(current || '')
+  const ref = useRef(null)
+  useEffect(() => { ref.current?.focus() }, [])
+  const submit = () => { if (name.trim()) onSet(name.trim()) }
+  return (
+    <div className="card center">
+      <p>Wpisz nazwę (np. <b>BAD</b>, <b>NICE</b>) — zdjęcia trafią do folderu o tej nazwie.</p>
+      <input ref={ref} className="labelfield" value={name} placeholder="BAD"
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && submit()} />
+      <div className="btnrow">
+        {onCancel && <button className="big ghost" onClick={onCancel}>anuluj</button>}
+        <button className="big primary" disabled={!name.trim()} onClick={submit}>USTAW NAZWĘ</button>
+      </div>
+    </div>
+  )
+}
+
+function ShootPanel({ state, busy, last, onShoot, onChangeLabel }) {
+  return (
+    <div className="card shootcard">
+      <div className="labrow">
+        <span>nazwa: <b className="lab">{state.label}</b></span>
+        <button className="link" onClick={onChangeLabel}>zmień nazwę</button>
+      </div>
+      <button className="big shoot" disabled={busy} onClick={onShoot}>
+        {busy ? 'ZDJĘCIE…' : '📷 ZRÓB ZDJĘCIE'}
+      </button>
+      {last && (
+        <div className="lastshot">
+          <img src={thumbUrl(last.label, last.index)} alt={last.png} />
+          <div>
+            <div className="ok">✓ {last.png}</div>
+            {last.dng && <div className="dim">+ {last.dng}</div>}
+          </div>
+        </div>
       )}
-      {modal === 'sample' && (
-        <DeclareSampleModal
-          study={status?.study}
-          current={session?.sample}
-          onClose={() => setModal(null)}
-          onSubmit={async (body) => {
-            try { await api.declareSample(body); setModal(null); await refreshSession() }
-            catch (e) { setError(e.message) }  // walidacja §8/§9 zwrócona przez silnik
-          }}
-        />
-      )}
+    </div>
+  )
+}
+
+function Counts({ counts, active }) {
+  const entries = Object.entries(counts || {})
+  if (!entries.length) return null
+  return (
+    <div className="card counts">
+      <div className="card-head">ZAPISANE</div>
+      {entries.map(([label, n]) => (
+        <div key={label} className={`row ${label === active ? 'active' : ''}`}>
+          <span className="k">{label}</span><span className="v">{n} zdj.</span>
+        </div>
+      ))}
     </div>
   )
 }
