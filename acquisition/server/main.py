@@ -22,6 +22,7 @@ from .camera import CameraManager, make_backend
 from .capture_engine import CaptureEngine
 from .config import load_config
 from .events import EventBus
+from .session import build_router
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -69,6 +70,9 @@ def create_app() -> FastAPI:
             "disk_free_gb": round(disk.free / 2**30, 2) if disk else None,
             "tuning_file": str(tuning),
             "tuning_present": tuning.exists(),
+            "study": config.station.get("study"),
+            "calibration_missing": [k for k in ("flatfield_id", "scale_id")
+                                    if not config.profile.get("calibration", {}).get(k)],
         }
 
     @app.get("/api/profile")
@@ -85,7 +89,10 @@ def create_app() -> FastAPI:
     async def event_stream() -> StreamingResponse:
         return StreamingResponse(events.subscribe(), media_type="text/event-stream")
 
-    # Bundle React (Faza 1) serwowany statycznie; do tego czasu placeholder.
+    # API sesji/próbki/ujęcia (§12.11) — przed montowaniem statyki na "/".
+    app.include_router(build_router(app.state))
+
+    # Bundle React serwowany statycznie ze `static/`.
     if STATIC_DIR.exists():
         app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="ui")
 

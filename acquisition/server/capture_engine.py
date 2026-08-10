@@ -62,7 +62,12 @@ class CaptureEngine:
         for key, value in fields.items():
             if value is None or value == "":
                 continue
-            args += [f"--{key.replace('_', '-')}", str(value)]
+            flag = f"--{key.replace('_', '-')}"
+            if isinstance(value, bool):
+                if value:            # store_true (np. --no-calibration) — bez wartości
+                    args.append(flag)
+                continue
+            args += [flag, str(value)]
         return await self._run(*args)
 
     async def advance_layout(self) -> EngineResult:

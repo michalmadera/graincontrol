@@ -3,7 +3,28 @@
 Backend UI stanowiska akwizycji (`docs/spec-akwizycji.md §12`). FastAPI
 (`uvicorn --workers 1`) + bundle React serwowany statycznie. Offline, kiosk.
 
-## Stan: Faza 0 (fundament)
+## Stan: Faza 1 (MVP — ekran sesji działa end-to-end)
+
+Ponad fundament Fazy 0 doszły: API sesji/próbki/ujęcia (`session.py`, §12.11) i
+frontend React (`../web/`) z ekranem `/session` (§12.3): podgląd, panel próbki,
+dwa wielkie przyciski, werdykt inline, pasek historii, etapy A/B/E. Cały przepływ
+sesja→próbka→ujęcie→QC przetestowany na atrapie kamery, także po HTTP
+(`tests/test_capture_flow.py`).
+
+### Frontend (React + Vite)
+
+Źródła w `../web/`, bundle budowany na maszynie deweloperskiej **prosto do
+`static/`** — na Pi nie ma node ani kroku budowania (§12.13):
+
+```bash
+cd acquisition/web && npm install && npm run build   # -> ../server/static/
+# dev z przeładowaniem (proxy /api do uvicorna na :8000):
+npm run dev
+```
+
+Zbudowany bundle (`static/assets/`) jest w repo, żeby Pi serwował go bez node.
+
+## Fundament (Faza 0)
 
 Zbudowane i przetestowane bez kamery:
 
