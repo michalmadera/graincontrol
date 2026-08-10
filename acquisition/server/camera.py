@@ -72,13 +72,16 @@ class RpicamBackend:
         return cmd
 
     async def frames(self) -> AsyncIterator[bytes]:
-        self._proc = await asyncio.create_subprocess_exec(
+        proc = await asyncio.create_subprocess_exec(
             *self._command(), stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL)
+        self._proc = proc
         buffer = b""
         try:
             while True:
-                chunk = await self._proc.stdout.read(65536)
+                # lokalna referencja: gdy close() ustawi self._proc=None (ujęcie),
+                # terminacja procesu daje EOF, a nie AttributeError na self._proc
+                chunk = await proc.stdout.read(65536)
                 if not chunk:
                     break
                 buffer += chunk
@@ -129,14 +132,30 @@ class CameraManager:
         return {"state": self.state, "backend": type(self._backend).__name__}
 
     async def preview_stream(self) -> AsyncIterator[bytes]:
-        """Ramki multipart MJPEG; wstrzymywany na czas ujęcia bez zrywania połączenia."""
-        self.state = "preview" if self.state == "idle" else self.state
-        async for frame in self._backend.frames():
-            # gdy trwa ujęcie, przestajemy czytać z urządzenia, ale trzymamy połączenie
-            await self._resume.wait()
-            yield (b"--frame\r\nContent-Type: image/jpeg\r\n"
-                   b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
-                   + frame + b"\r\n")
+        """Ramki multipart MJPEG; po ujęciu podgląd wznawia się w tym samym połączeniu.
+
+        Na czas ujęcia urządzenie jest zwalniane (rpicam-vid zamykany), więc backendowy
+        strumień ramek się kończy. Zamiast zrywać połączenie, czekamy na wznowienie i
+        otwieramy strumień na nowo — przeglądarkowy <img> nie musi się przełączać."""
+        if self.state == "idle":
+            self.state = "preview"
+        while True:
+            await self._resume.wait()          # po ujęciu blokuje aż do wznowienia
+            try:
+                async for frame in self._backend.frames():
+                    if not self._resume.is_set():
+                        break                  # ujęcie startuje — puść urządzenie
+                    yield (b"--frame\r\nContent-Type: image/jpeg\r\n"
+                           b"Content-Length: " + str(len(frame)).encode()
+                           + b"\r\n\r\n" + frame + b"\r\n")
+            except (asyncio.CancelledError, GeneratorExit):
+                await self._close_preview_device()
+                raise                          # klient się rozłączył — kończymy
+            except Exception:
+                pass                           # błąd urządzenia — spróbuj po wznowieniu
+            finally:
+                await self._close_preview_device()
+            await asyncio.sleep(0.2)
 
     async def run_exclusive(
             self, work: Callable[[], Awaitable], on_state=None):
@@ -153,8 +172,8 @@ class CameraManager:
             if on_state:
                 on_state(self.state)
             self._resume.clear()
-            await asyncio.sleep(0.3)         # pozwól backendowi zwolnić urządzenie
             await self._close_preview_device()
+            await asyncio.sleep(0.5)         # pozwól kamerze zwolnić urządzenie (rpicam-vid)
             try:
                 self.state = "capturing"
                 if on_state:

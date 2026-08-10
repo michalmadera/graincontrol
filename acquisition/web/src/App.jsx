@@ -21,6 +21,10 @@ export default function App() {
     try { setState(await api.startSession()); setLast(null); setEditingLabel(true) }
     catch (e) { setError(e.message) }
   }
+  async function newSession() {
+    if (!confirm('Nowa sesja? Bieżące zdjęcia zostają zapisane na dysku.')) return
+    await startSession()
+  }
   async function setLabel(name) {
     setError(null)
     try { setState(await api.setLabel(name)); setEditingLabel(false); setLast(null) }
@@ -49,6 +53,12 @@ export default function App() {
       <Header state={state} />
       {state.warnings?.length > 0 &&
         <div className="strip warn">⚠ {state.warnings.join(' · ')}</div>}
+      {hasSession && (
+        <div className="sessionbar">
+          <span className="sbpath" title={state.session_path}>📁 {state.session_path}</span>
+          <button className="sbnew" onClick={newSession}>+ NOWA SESJA</button>
+        </div>
+      )}
 
       <div className="main">
         <Preview busy={busy} flash={flash} last={last} />
