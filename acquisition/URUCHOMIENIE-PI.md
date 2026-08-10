@@ -21,9 +21,18 @@ Bundle React (`acquisition/server/static/`) jest w repo — **node na Pi niepotr
 
 ## 2. Zależności Pythona (raz)
 
+Na nowym Raspberry Pi OS (Bookworm) `pip install` bywa blokowany
+(„externally-managed-environment"). Najpewniej **venv**:
+
 ```bash
-pip install -r acquisition/server/requirements.txt
-# gdyby pip marudził na numpy/Pillow, można z apt:
+python3 -m venv ~/gc-venv
+~/gc-venv/bin/pip install -r acquisition/server/requirements.txt
+```
+
+Albo bez venv (globalnie, dla użytkownika):
+```bash
+pip install --user --break-system-packages fastapi "uvicorn[standard]" numpy Pillow
+# gdyby numpy/Pillow marudziły, można z apt:
 # sudo apt install -y python3-numpy python3-pil
 ```
 
@@ -38,10 +47,19 @@ rpicam-hello -t 1500        # czy pokazuje obraz z kamery
 
 ## 4. Odpal serwer
 
+**Zawsze przez `python3 -m uvicorn`** (komenda `uvicorn` często nie jest na PATH).
+
+Jeśli używasz venv:
+```bash
+cd ~/graincontrol
+PYTHONPATH=acquisition ~/gc-venv/bin/python -m uvicorn server.main:app --host 0.0.0.0 --port 8000
+```
+
+Bez venv:
 ```bash
 cd ~/graincontrol
 export PYTHONPATH=acquisition
-uvicorn server.main:app --host 0.0.0.0 --port 8000
+python3 -m uvicorn server.main:app --host 0.0.0.0 --port 8000
 ```
 
 Otwórz w przeglądarce:
@@ -77,6 +95,8 @@ export GRAINCONTROL_PROFILE=/sciezka/do/profilu.json
 
 | objaw | co to znaczy / co zrobić |
 |---|---|
+| `uvicorn: command not found` | wołaj `python3 -m uvicorn ...` (nie `uvicorn ...`) |
+| `No module named uvicorn` | niezainstalowany — patrz krok 2 (venv albo `pip install --user --break-system-packages`) |
 | UI wisi „łączenie z kamerą" | stary serwer chodzi — `pkill -f "uvicorn server.main"` i odpal ponownie; w przeglądarce Ctrl+Shift+R |
 | plakietka „ATRAPA" na Pi | `rpicam-still` nie na PATH → `sudo apt install rpicam-apps`, sprawdź `rpicam-hello` |
 | czerwony toast po ZDJĘCIU | błąd `rpicam-still` — treść błędu jest w toaście i w terminalu |
