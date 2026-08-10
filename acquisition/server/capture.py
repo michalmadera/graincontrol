@@ -37,6 +37,19 @@ TUNING_CANDIDATES = [
 ]
 
 
+def resolve_tuning(profile: dict) -> str | None:
+    """Ścieżka z profilu, jeśli istnieje; inaczej wykryj (Pi5/Pi4); inaczej None.
+
+    Wspólne dla zdjęcia i podglądu, żeby oba używały tego samego pliku strojenia."""
+    configured = profile.get("tuning_file")
+    if configured and Path(configured).exists():
+        return configured
+    for candidate in TUNING_CANDIDATES:
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
 def sanitize_label(name: str) -> str:
     """Nazwa etykiety bezpieczna dla katalogu; spacje→_, reszta znaków→_."""
     cleaned = _SAFE.sub("_", (name or "").strip()).strip("_")
@@ -127,14 +140,7 @@ class CaptureController:
         return self.config.force_dummy or shutil.which(self.config.rpicam_still) is None
 
     def resolve_tuning(self) -> str | None:
-        """Ścieżka profilu, jeśli istnieje; inaczej wykryj (Pi5/Pi4); inaczej None."""
-        configured = self.config.profile.get("tuning_file")
-        if configured and Path(configured).exists():
-            return configured
-        for candidate in TUNING_CANDIDATES:
-            if Path(candidate).exists():
-                return candidate
-        return None
+        return resolve_tuning(self.config.profile)
 
     def diagnostics(self) -> dict:
         """Stan gotowości do zdjęcia — pokazywany w UI, żeby problem był widać z góry."""

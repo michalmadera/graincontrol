@@ -59,12 +59,16 @@ class RpicamBackend:
         self._proc: asyncio.subprocess.Process | None = None
 
     def _command(self) -> list[str]:
+        from .capture import resolve_tuning
         cmd = [self.rpicam_vid, "-t", "0", "--codec", "mjpeg", "--nopreview",
                "--width", str(self.size[0]), "--height", str(self.size[1]),
                "--shutter", str(self.profile["shutter_us"]),
                "--gain", str(self.profile["analogue_gain"]),
                "--awbgains", ",".join(str(g) for g in self.profile["awb_gains"]),
-               "--tuning-file", self.profile["tuning_file"], "-o", "-"]
+               "-o", "-"]
+        tuning = resolve_tuning(self.profile)
+        if tuning:
+            cmd += ["--tuning-file", tuning]
         return cmd
 
     async def frames(self) -> AsyncIterator[bytes]:
