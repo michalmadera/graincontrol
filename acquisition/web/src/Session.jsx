@@ -9,7 +9,10 @@ const STAGE_LABEL = {
 
 export default function Session(props) {
   const { status, session, history, busy, stage, verdict } = props
-  const open = session?.status === 'open'
+  // 'none' = brak sesji; 'pending' = parametry sesji zapamiętane, ale session.json
+  // powstanie dopiero przy pierwszej deklaracji próbki (sprzężenie silnika);
+  // 'open' = sesja zapisana. W 'pending' i 'open' bez próbki prowadzimy do deklaracji.
+  const started = session?.status === 'open' || session?.status === 'pending'
   const sample = session?.sample
 
   return (
@@ -21,10 +24,10 @@ export default function Session(props) {
         <Preview busy={busy} stage={stage} />
 
         <aside className="side">
-          {!open ? (
-            <StartCard onStart={props.onStartSession} pending={session?.status === 'pending'} />
+          {!started ? (
+            <StartCard onStart={props.onStartSession} />
           ) : !sample ? (
-            <NoSampleCard onChange={props.onChangeSample} />
+            <NoSampleCard onChange={props.onChangeSample} pending={session?.status === 'pending'} />
           ) : (
             <>
               <SamplePanel sample={sample} onChange={props.onChangeSample} />
@@ -54,6 +57,8 @@ function Header({ status, session, onEndSession }) {
       <div className="hleft">
         {session?.status === 'open'
           ? <><b>SESJA {session.session_id}</b> · profil {session.profile_id} · operator {session.operator}</>
+          : session?.status === 'pending'
+          ? <b>Sesja przygotowana — zadeklaruj próbkę</b>
           : <b>Brak otwartej sesji</b>}
       </div>
       <div className="hright">
@@ -91,19 +96,21 @@ function Preview({ busy, stage }) {
   )
 }
 
-function StartCard({ onStart, pending }) {
+function StartCard({ onStart }) {
   return (
     <div className="card center">
-      <p>{pending ? 'Sesja przygotowana — zadeklaruj pierwszą próbkę.' : 'Rozpocznij sesję, aby zbierać materiał.'}</p>
+      <p>Rozpocznij sesję, aby zbierać materiał.</p>
       <button className="big primary" onClick={onStart}>START SESJI</button>
     </div>
   )
 }
 
-function NoSampleCard({ onChange }) {
+function NoSampleCard({ onChange, pending }) {
   return (
     <div className="card center">
-      <p>Zadeklaruj próbkę (§8), aby odblokować ujęcia.</p>
+      <p>{pending
+        ? 'Sesja przygotowana. Zadeklaruj pierwszą próbkę (§8) — wtedy zapisze się sesja i odblokują ujęcia.'
+        : 'Zadeklaruj próbkę (§8), aby odblokować ujęcia.'}</p>
       <button className="big primary" onClick={onChange}>DEKLARUJ PRÓBKĘ</button>
     </div>
   )
