@@ -1,0 +1,5 @@
+# Serwer UI akwizycji (Faza 0). Instalacja na Pi bez kompilacji ciężkich pakietów.
+fastapi>=0.111
+uvicorn[standard]>=0.30
+numpy>=1.26
+Pillow>=10.0
