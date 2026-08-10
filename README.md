@@ -35,6 +35,7 @@ graincontrol/
 ├── service/         serwis analizujący (REST API + GPU)
 ├── panel/           panel laboratorium (aplikacja przeglądarkowa)
 ├── profiles/        wersjonowane profile akwizycji i profile oceny
+├── samples/         obrazy referencyjne do rozwoju algorytmów
 └── libs/            wspólne schematy JSON, klient API, typy
 ```
 

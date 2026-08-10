@@ -1,0 +1,126 @@
+{
+  "source_image": "stones1.png",
+  "output_image": "stones2.png",
+  "note": "wzorce syntetyczne (renderowane), nie sfotografowane — obraz testowy",
+  "spec": "spec-analizy-barwy.md §6.1 (kotwica fotometryczna)",
+  "scale": {
+    "um_per_px": 35.9,
+    "px_per_mm": 27.8552,
+    "source": "analiza/an3.py — założenie 12 mm @ 290 mm, nie pomiar wzorca"
+  },
+  "render_model": {
+    "isp_gamma": 0.3448,
+    "isp_gamma_source": "imx477.json: 25% wejścia -> 62% wyjścia (§2.3)",
+    "rho_stone_assumed": 0.65,
+    "stone_median_rgb_er5": [
+      138.0,
+      153.0,
+      161.0
+    ],
+    "stone_median_lab_er5": [
+      62.274,
+      -3.594,
+      -5.969
+    ],
+    "otsu_dn_gray_src": 97.0,
+    "otsu_dn_gray_dst": 97.0,
+    "illumination_field": "wielomian 2. st. dopasowany do siatki 8x6 P98 L* pikseli kamienia",
+    "sigma_dn": 2.0,
+    "sigma_correlated_frac": 0.4,
+    "edge_blur_px": 2.0,
+    "contact_shadow_px": 14,
+    "rng_seed": 20260808
+  },
+  "geometry_rationale": {
+    "side_px": 418,
+    "side_mm": 15.0,
+    "gap_px": 84,
+    "gap_mm": 3.0,
+    "frame_margin_px": 111,
+    "frame_margin_mm": 4.0,
+    "why": [
+      "dolna granica z marginesu krawędziowego: halo wyostrzania siega ~10 px (§2.2), CDN miesza chrome na kilku px, do tego faza plytki i tolerancja ustawienia -> erozja 30 px",
+      "dolna granica ze statystyki: n=10 000 px daje SE mediany L* ~0.02 jedn. -> bok >= 160 px",
+      "dolna granica z rozroznialnosci od kamieni: kamien ma ~35 px srednicy (~960 px pola); wzorzec >= 100x pole kamienia -> bok >= 310 px",
+      "gorna granica: bok <= 507 px, czyli jedno oczko siatki kontroli pola oswietlenia 8x6 (§6), zeby gradient wewnatrz wzorca byl < 0.5 jedn. L*",
+      "gorna granica praktyczna: wzorzec nie moze zjadac pola materialu; 2 x 15 mm = 2.8% kadru",
+      "wybrane 15 mm = 418 px miesci sie w przedziale 310-507 px i jest okragla wartoscia fizyczna"
+    ]
+  },
+  "patches": [
+    {
+      "id": "grey",
+      "rho": 0.5,
+      "x": 3527,
+      "y": 2009,
+      "w": 418,
+      "h": 418,
+      "rgb_median_expected": [
+        123.94,
+        137.41,
+        144.59
+      ],
+      "lab_median_expected": [
+        56.25,
+        -3.234,
+        -5.641
+      ],
+      "side_mm": 15.0,
+      "erosion_for_gt_px": 30,
+      "n_px_core": 128164,
+      "measured": {
+        "n_px": 128164,
+        "rgb_median": [
+          124.0,
+          137.0,
+          145.0
+        ],
+        "L_median": 56.372,
+        "a_median": -3.453,
+        "b_median": -5.5,
+        "L_sd": 0.69,
+        "L_p05": 55.243,
+        "L_p95": 57.501,
+        "clip_frac": 0.0,
+        "near_clip_frac": 0.0
+      }
+    },
+    {
+      "id": "white",
+      "rho": 0.99,
+      "x": 3527,
+      "y": 2511,
+      "w": 418,
+      "h": 418,
+      "rgb_median_expected": [
+        156.46,
+        173.46,
+        182.53
+      ],
+      "lab_median_expected": [
+        69.836,
+        -4.0,
+        -6.578
+      ],
+      "side_mm": 15.0,
+      "erosion_for_gt_px": 30,
+      "n_px_core": 128164,
+      "measured": {
+        "n_px": 128164,
+        "rgb_median": [
+          156.0,
+          173.0,
+          183.0
+        ],
+        "L_median": 69.818,
+        "a_median": -3.984,
+        "b_median": -6.594,
+        "L_sd": 0.658,
+        "L_p05": 68.738,
+        "L_p95": 70.898,
+        "clip_frac": 0.0,
+        "near_clip_frac": 0.0
+      }
+    }
+  ]
+}

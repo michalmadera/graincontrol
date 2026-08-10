@@ -18,13 +18,15 @@ out/
 data/
 archiwum/
 
-# Zdjęcia próbek — archiwum zdjęć jest poza repozytorium
+# Zdjęcia próbek — archiwum zdjęć jest poza repozytorium.
+# Wyjątek: samples/ — mały, niezmienny zbiór obrazów referencyjnych (samples/README.md)
 *.png
 *.jpg
 *.jpeg
 *.dng
 *.raw
 !docs/**/*.png
+!samples/**/*.png
 
 # Środowisko
 .env
