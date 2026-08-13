@@ -1,13 +1,21 @@
-"""Test przepływu prostej akwizycji (atrapa kamery, bez Pi).
+"""Test przepływu akwizycji z GUI (atrapa kamery, bez Pi).
 
-Sesja → etykieta BAD → 3 zdjęcia → etykieta NICE → 2 zdjęcia. Sprawdza strukturę
-folderów, numerację i to, że powstają PNG + DNG + miniatury.
+Sprawdza to, co odróżnia ten tor od zwykłego zapisu plików:
+
+  * ta sama linia polecenia co w CLI — z pliku strojenia z profilu, `--metadata`,
+    `--raw` i `--immediate`,
+  * kontrakt akwizycji §5 liczony po każdym ujęciu,
+  * komplet plików towarzyszących: metadane wzbogacone o `_isp_*`/`_command_line`,
+    rekord akwizycji, suma kontrolna,
+  * ujęcie niezgodne z profilem → `odrzucone/`, **bez** zwiększenia numeru,
+  * zapis przerwany → przy starcie sesji trafia do `odrzucone/niedokonczone/`.
 
 Uruchomienie:  python3 acquisition/server/tests/test_capture.py
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 import tempfile
@@ -22,7 +30,12 @@ async def _run(data_root: Path) -> int:
     from server.config import load_config
     from server.capture import CaptureController
 
-    ctrl = CaptureController(load_config())
+    config = load_config()
+    assert config.blocking_error is None, config.blocking_error
+    assert config.profile_id == "P2-scientific-20260813", config.profile_id
+    print(f"  profil: {config.profile_id}, {config.profile['shutter_us']} µs")
+
+    ctrl = CaptureController(config)
     st = ctrl.start_session()
     assert st["session"].startswith("sesja_"), st
     session_dir = Path(st["session_path"])
@@ -30,35 +43,111 @@ async def _run(data_root: Path) -> int:
     ctrl.set_label("BAD")
     for _ in range(3):
         r = await ctrl.shoot()
-    assert r["index"] == 3, r
+    assert r["index"] == 3 and r["accepted"], r
     ctrl.set_label("NICE")
     for _ in range(2):
         r = await ctrl.shoot()
-    assert r["index"] == 2, r
+    assert r["index"] == 2 and r["accepted"], r
 
     counts = ctrl.state()["counts"]
     assert counts == {"BAD": 3, "NICE": 2}, counts
 
     for name, n in (("BAD", 3), ("NICE", 2)):
         for i in range(1, n + 1):
-            png = session_dir / name / f"{name}_{i}.png"
-            dng = session_dir / name / f"{name}_{i}.dng"
-            thumb = session_dir / ".thumb" / f"{name}_{i}.jpg"
-            assert png.exists(), f"brak {png}"
-            assert dng.exists(), f"brak {dng}"
-            assert thumb.exists(), f"brak miniatury {thumb}"
+            stem = f"{name}_{i}"
+            for suffix in (".png", ".dng", "_meta.json", "_acquisition.json", ".sha256"):
+                path = session_dir / name / f"{stem}{suffix}"
+                assert path.exists(), f"brak {path}"
+            assert (session_dir / ".thumb" / f"{stem}.jpg").exists(), stem
 
-    print(f"  sesja: {session_dir.name}")
-    print(f"  BAD/  → {sorted(p.name for p in (session_dir / 'BAD').glob('*'))}")
-    print(f"  NICE/ → {sorted(p.name for p in (session_dir / 'NICE').glob('*'))}")
-    print(f"  liczniki: {counts}")
+    # --- linia polecenia i wzbogacenie metadanych: to samo, co robi CLI
+    meta = json.loads((session_dir / "BAD" / "BAD_1_meta.json").read_text())
+    for key in ("_isp_sharpness", "_isp_denoise", "_tuning_file", "_profile_id",
+                "_command_line", "_rpicam_version"):
+        assert key in meta, f"brak {key} w meta.json"
+    cmd = " ".join(meta["_command_line"])
+    for flag in ("--tuning-file", "--metadata", "--metadata-format", "--raw",
+                 "--immediate", "--sharpness", "--denoise", "--awbgains"):
+        assert flag in cmd, f"linia polecenia bez {flag}"
+    assert meta["_dummy"] is True, "ujęcie z atrapy musi być oznaczone"
+    assert str(config.profile["shutter_us"]) in cmd, cmd
+    print(f"  metadane wzbogacone o {sum(k.startswith('_') for k in meta)} pól '_'")
 
-    # ponowne wejście w BAD kontynuuje numerację (bad_4)
+    record = json.loads((session_dir / "BAD" / "BAD_1_acquisition.json").read_text())
+    assert record["contract"]["status"] == "ok", record["contract"]
+    fields = {c["field"] for c in record["contract"]["checks"]}
+    assert {"ExposureTime", "AnalogueGain", "DigitalGain",
+            "ColourCorrectionMatrix"} <= fields, fields
+    print(f"  kontrakt sprawdza: {', '.join(sorted(fields))}")
+
+    # --- sumy kontrolne zgadzają się z plikami na dysku
+    import hashlib
+    for line in (session_dir / "BAD" / "BAD_1.sha256").read_text().splitlines():
+        digest, name = line.split("  ")
+        actual = hashlib.sha256((session_dir / "BAD" / name).read_bytes()).hexdigest()
+        assert actual == digest, f"suma {name} nie zgadza się"
+    print("  sumy kontrolne zgodne z plikami")
+
+    # --- ujęcie niezgodne z profilem: odrzucone, numer bez zmian
     ctrl.set_label("BAD")
+    original = ctrl.reference["reference_ccm"]
+    ctrl.reference["reference_ccm"] = [9.0] * 9        # symulacja zmiany CCM w sesji
     r = await ctrl.shoot()
-    assert r["index"] == 4, r
-    print(f"  powrót do BAD → {r['png']} (numeracja ciągła)")
-    print("OK — przepływ sesja→etykieta→zdjęcia (PNG+DNG) działa.")
+    assert r["accepted"] is False, r
+    assert r["contract"] == "rejected" and r["violations"], r
+    assert (session_dir / "odrzucone" / "BAD" / r["capture_id"] / r["png"]).exists(), r
+    print(f"  odrzucone: {r['violations'][0][:60]}…")
+
+    ctrl.reference["reference_ccm"] = original
+    r2 = await ctrl.shoot()
+    assert r2["accepted"] and r2["index"] == r["index"], (r, r2)
+    print(f"  powtórka po odrzuceniu ma ten sam numer: {r2['png']}")
+
+    # --- skasowanie pliku NIE zwalnia numeru (identyfikator nie wraca do obiegu)
+    highest = ctrl._next_index("NICE")
+    (session_dir / "NICE" / "NICE_2.png").unlink()
+    assert ctrl._next_index("NICE") == highest, "numer skasowanego ujęcia wrócił do obiegu"
+    print(f"  po skasowaniu NICE_2 następny numer to nadal {highest}")
+
+    # --- dwa odrzucenia pod rząd nie kasują się nawzajem
+    ctrl.set_label("BAD")
+    ctrl.reference["reference_ccm"] = [9.0] * 9
+    a = await ctrl.shoot()
+    b = await ctrl.shoot()
+    assert a["index"] == b["index"], (a, b)
+    assert a["capture_id"] != b["capture_id"], (a, b)
+    rejected_dirs = sorted(p.name for p in (session_dir / "odrzucone" / "BAD").iterdir())
+    assert len(rejected_dirs) == 3, rejected_dirs   # wcześniejsze + te dwa
+    print(f"  dwa odrzucenia z numerem {a['index']} zachowane osobno: "
+          f"{a['capture_id']}, {b['capture_id']}")
+    ctrl.reference["reference_ccm"] = original
+
+    # --- manifest i dziennik
+    import csv as _csv
+    with (session_dir / "manifest.csv").open(newline="") as f:
+        manifest = list(_csv.DictReader(f))
+    ids = [row["capture_id"] for row in manifest]
+    assert len(ids) == len(set(ids)), f"powtórzony capture_id w manifeście: {ids}"
+    accepted_rows = [r for r in manifest if r["contract_status"] == "ok"]
+    rejected_rows = [r for r in manifest if r["contract_status"] == "rejected"]
+    assert len(accepted_rows) == 6 and len(rejected_rows) == 3, manifest
+    events = [json.loads(x)["event"] for x in
+              (session_dir / "journal.jsonl").read_text().splitlines()]
+    assert events.count("capture_rejected") == 3 and events.count("capture_accepted") == 6, events
+    print(f"  manifest: {len(manifest)} wierszy, wszystkie capture_id unikalne")
+
+    # --- zapis przerwany zanikiem zasilania
+    broken = session_dir / ".tmp" / "BAD_99"
+    broken.mkdir(parents=True)
+    (broken / "BAD_99.png").write_bytes(b"niedokonczone")
+    ctrl2 = CaptureController(config)
+    ctrl2.session_dir, ctrl2.session_id = session_dir, session_dir.name
+    recovered = ctrl2._recover_interrupted()
+    assert recovered == ["BAD_99"], recovered
+    assert (session_dir / "odrzucone" / "niedokonczone" / "BAD_99" / "BAD_99.png").exists()
+    print("  przerwany zapis przeniesiony do odrzucone/niedokonczone/")
+
+    print("OK — GUI zapisuje tym samym silnikiem co CLI.")
     return 0
 
 

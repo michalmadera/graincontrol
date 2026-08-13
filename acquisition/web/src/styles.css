@@ -28,6 +28,10 @@ code { font-family: ui-monospace, monospace; }
 
 .strip { flex: 0 0 auto; padding: 6px 16px; font-size: 13px; }
 .strip.warn { background: #3a2e10; color: var(--warn); border-bottom: 1px solid var(--line); }
+/* Blokada stanowiska ma być widoczna cały czas, a nie tylko przy próbie zdjęcia (§12.12). */
+.strip.blocked { background: #3a1512; color: #ff9c92; font-weight: 700;
+  border-bottom: 1px solid var(--bad); white-space: pre-line; }
+.prof { color: var(--dim); font-family: ui-monospace, monospace; font-size: 12px; }
 
 .sessionbar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
   padding: 6px 16px; background: var(--panel2); border-bottom: 1px solid var(--line); }
@@ -85,6 +89,12 @@ code { font-family: ui-monospace, monospace; }
 .lastshot img { width: 96px; height: 72px; object-fit: cover; border-radius: 8px; background: #000; }
 .lastshot .ok { color: var(--good); font-weight: 700; font-family: ui-monospace, monospace; }
 .lastshot .dim { color: var(--dim); font-size: 13px; font-family: ui-monospace, monospace; }
+.lastshot.rejected { background: #2a1210; border-radius: 8px; padding: 10px; }
+.lastshot .bad { color: var(--bad); font-weight: 700; font-family: ui-monospace, monospace; }
+.lastshot .viol { color: #ff9c92; font-size: 13px; font-family: ui-monospace, monospace;
+  padding-left: 12px; }
+.lastshot .warntext { color: var(--warn); font-size: 13px; font-family: ui-monospace, monospace; }
+.counts .row.rej .k, .counts .row.rej .v { color: var(--bad); }
 
 .counts .row { display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 6px; font-size: 16px; }
 .counts .row.active { background: #23324a; }

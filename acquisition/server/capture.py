@@ -1,23 +1,38 @@
-"""Prosta akwizycja: sesja → etykieta (podfolder) → seria zdjęć PNG+DNG.
+"""Akwizycja: sesja → etykieta (podfolder) → seria zdjęć, **tym samym silnikiem co CLI**.
+
+Zdjęcie powstaje linią polecenia z `captureSample.build_command`, a po zapisie
+przechodzi kontrakt akwizycji z §5: `ExposureTime`, `AnalogueGain`, `ColourGains`
+±1%, `DigitalGain` 1,000 ±0,01 i `ColourCorrectionMatrix` identyczna jak w pierwszym
+ujęciu sesji. Ujęcie niezgodne z profilem trafia do `odrzucone/` i **nie zwiększa
+numeru** — operator powtarza je, a numeracja zostaje ciągła.
 
 Struktura na dysku:
 
     dane/
       sesja_YYYYMMDD_HHMM/
-        BAD/   BAD_1.png  BAD_1.dng  BAD_2.png  BAD_2.dng …
-        NICE/  NICE_1.png NICE_1.dng …
-        .thumb/  BAD_1.jpg …          (miniatury do UI, kasowalne)
+        manifest.csv                 jeden wiersz na ujęcie
+        journal.jsonl                dziennik dopisywany, nigdy edytowany
+        BAD/   BAD_1.png  BAD_1.dng  BAD_1_meta.json  BAD_1_acquisition.json
+               BAD_1.sha256          ← marker kompletności, pisany na końcu
+        odrzucone/BAD/BAD_3_123500/  ujęcie odrzucone: własny katalog ze znacznikiem
+                                     czasu, bo numer rośnie dopiero po przyjęciu
+        .thumb/  BAD_1.jpg …         miniatury do UI, kasowalne
+        .tmp/                        katalog roboczy pojedynczego ujęcia
 
-Parametry kamery są zamrożone z profilu (czas, wzmocnienia, AWB, plik strojenia,
-ISP bez wyostrzania/denoise) — dokładnie jak w `photoSingle.py`. `--raw` sprawia,
-że rpicam-still zapisuje DNG obok PNG (ten sam trzon nazwy).
+Zapis jest atomowy w tym sensie, że `*.sha256` powstaje jako ostatni: plik zdjęcia bez
+towarzyszącego mu `.sha256` to zapis przerwany i przy starcie sesji trafia do
+`odrzucone/`. Zanik zasilania nie zostawia ujęcia wyglądającego na kompletne (§11).
 
-Bez rpicam-still w systemie (maszyna dev) działa atrapa: syntetyczny PNG + placeholder
-DNG, żeby cały przepływ dało się przeklikać bez Pi.
+Bez rpicam-still w systemie działa atrapa: syntetyczny PNG, placeholder DNG i metadane
+zgodne z profilem, żeby przepływ dało się przeklikać bez Pi. Takie ujęcia mają
+`_dummy: true` w metadanych i w rekordzie — nigdy nie da się ich pomylić z materiałem.
 """
 from __future__ import annotations
 
 import asyncio
+import csv
+import json
+import os
 import re
 import shutil
 from datetime import datetime
@@ -25,29 +40,26 @@ from pathlib import Path
 
 from PIL import Image
 
+from . import engine
 from .config import Config
 
 THUMB_LONG = 320
 _SAFE = re.compile(r"[^A-Za-z0-9_-]+")
-
-# Plik strojenia bywa w innym katalogu zależnie od modelu Pi — jak w photoSingle.py.
-TUNING_CANDIDATES = [
-    "/usr/share/libcamera/ipa/rpi/pisp/imx477_scientific.json",  # Pi 5
-    "/usr/share/libcamera/ipa/rpi/vc4/imx477_scientific.json",   # Pi 4
-]
+MANIFEST_COLUMNS = ["capture_id", "session", "label", "index", "timestamp",
+                    "profile_id", "contract_status", "dummy", "image_sha256"]
 
 
 def resolve_tuning(profile: dict) -> str | None:
-    """Ścieżka z profilu, jeśli istnieje; inaczej wykryj (Pi5/Pi4); inaczej None.
+    """Plik strojenia **z profilu**, bez podmian.
 
-    Wspólne dla zdjęcia i podglądu, żeby oba używały tego samego pliku strojenia."""
+    Wcześniejsza wersja przy braku pliku szukała wariantu Pi4/Pi5, a gdy nie znalazła
+    żadnego — robiła zdjęcie na domyślnym `imx477.json`. To inna krzywa tonalna, inne
+    macierze CCM i obecny blok ALSC: obraz wygląda poprawnie i jest nieporównywalny
+    z resztą zbioru. Autowykrywanie należy do konfiguracji profilu, nie do momentu
+    naciśnięcia migawki.
+    """
     configured = profile.get("tuning_file")
-    if configured and Path(configured).exists():
-        return configured
-    for candidate in TUNING_CANDIDATES:
-        if Path(candidate).exists():
-            return candidate
-    return None
+    return configured if configured and Path(configured).exists() else None
 
 
 def sanitize_label(name: str) -> str:
@@ -55,6 +67,8 @@ def sanitize_label(name: str) -> str:
     cleaned = _SAFE.sub("_", (name or "").strip()).strip("_")
     if not cleaned:
         raise ValueError("Pusta nazwa etykiety.")
+    if cleaned == "odrzucone":
+        raise ValueError("Nazwa 'odrzucone' jest zarezerwowana.")
     return cleaned
 
 
@@ -63,21 +77,38 @@ class CaptureController:
         self.config = config
         self.session_dir: Path | None = None
         self.label: str | None = None
+        self.session_id: str | None = None
+        # odniesienia sesji: pierwsza macierz CCM i pierwszy Lux (§5)
+        self.reference = {"reference_ccm": None, "reference_lux": None}
+        self._tools: dict | None = None
 
     # ------------------------------------------------------------- sesja
     def start_session(self) -> dict:
+        self._require_ready()
         stamp = datetime.now().strftime("%Y%m%d_%H%M")
         name = f"sesja_{stamp}"
         path = self.config.data_root / name
-        # gdyby dwie sesje w tej samej minucie — dołóż sufiks
         suffix = 1
         while path.exists():
             suffix += 1
             path = self.config.data_root / f"{name}_{suffix}"
         path.mkdir(parents=True, exist_ok=True)
+        (path / ".tmp").mkdir(exist_ok=True)
         self.session_dir = path
+        self.session_id = path.name
         self.label = None
-        return self.state()
+        self.reference = {"reference_ccm": None, "reference_lux": None}
+        self._journal("session_start", {
+            "profile_id": self.config.profile_id,
+            "profile_sha256": self.config.profile_sha256,
+            "tuning_file": self.config.profile.get("tuning_file"),
+            "tuning_file_sha256": self.config.tuning_sha256,
+            "dummy": self.config.dummy,
+        })
+        recovered = self._recover_interrupted()
+        state = self.state()
+        state["recovered"] = recovered
+        return state
 
     def set_label(self, name: str) -> dict:
         if self.session_dir is None:
@@ -85,7 +116,23 @@ class CaptureController:
         label = sanitize_label(name)
         (self.session_dir / label).mkdir(exist_ok=True)
         self.label = label
+        self._journal("label_set", {"label": label})
         return self.state()
+
+    def _recover_interrupted(self) -> list[str]:
+        """Zapis przerwany zanikiem zasilania → odrzucone/, z przyczyną (§11)."""
+        recovered = []
+        staging_root = self.session_dir / ".tmp"
+        for leftover in sorted(staging_root.iterdir()) if staging_root.exists() else []:
+            if not leftover.is_dir():
+                continue
+            target = self.session_dir / "odrzucone" / "niedokonczone" / leftover.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.rename(leftover, target)
+            self._journal("capture_recovered",
+                          {"capture_id": leftover.name, "reason": "zapis niedokończony"})
+            recovered.append(leftover.name)
+        return recovered
 
     # ------------------------------------------------------------- stan
     def _counts(self) -> dict:
@@ -93,17 +140,46 @@ class CaptureController:
             return {}
         out = {}
         for sub in sorted(self.session_dir.iterdir()):
-            if sub.is_dir() and not sub.name.startswith("."):
+            if sub.is_dir() and not sub.name.startswith(".") and sub.name != "odrzucone":
                 out[sub.name] = len(list(sub.glob("*.png")))
         return out
 
+    def _rejected_count(self) -> int:
+        rejected = self.session_dir / "odrzucone" if self.session_dir else None
+        return len(list(rejected.rglob("*.png"))) if rejected and rejected.exists() else 0
+
+    def _manifest_rows(self) -> list[dict]:
+        path = self.session_dir / "manifest.csv" if self.session_dir else None
+        if not path or not path.exists():
+            return []
+        with path.open(newline="", encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+
     def _next_index(self, label: str) -> int:
-        folder = self.session_dir / label
+        """Najwyższy numer **kiedykolwiek użyty** w tej etykiecie, plus jeden.
+
+        Wyliczanie numeru z samych plików na dysku miało wadę: skasowanie nieudanego
+        zdjęcia zwalniało numer, kolejne ujęcie dostawało ten sam identyfikator
+        i nadpisywało poprzednie. W manifeście zostawały wtedy dwa wiersze o tym samym
+        `capture_id` i różnych sumach kontrolnych — archiwum ma być niezmienne (§0).
+        Manifest pamięta numery skasowanych ujęć, więc identyfikator nie wraca do obiegu.
+
+        Ujęcia odrzucone przez kontrakt numeru **nie** zajmują (§5) — liczone są tylko
+        wiersze o statusie `ok`.
+        """
         highest = 0
-        for png in folder.glob(f"{label}_*.png"):
-            m = re.search(rf"{re.escape(label)}_(\d+)\.png$", png.name)
-            if m:
-                highest = max(highest, int(m.group(1)))
+        folder = self.session_dir / label
+        if folder.exists():
+            for png in folder.glob(f"{label}_*.png"):
+                m = re.fullmatch(rf"{re.escape(label)}_(\d+)\.png", png.name)
+                if m:
+                    highest = max(highest, int(m.group(1)))
+        for row in self._manifest_rows():
+            if row.get("label") == label and row.get("contract_status") == "ok":
+                try:
+                    highest = max(highest, int(row["index"]))
+                except (KeyError, TypeError, ValueError):
+                    pass
         return highest + 1
 
     def state(self) -> dict:
@@ -112,77 +188,221 @@ class CaptureController:
             "session_path": (str(self.session_dir) if self.session_dir else None),
             "label": self.label,
             "counts": self._counts(),
+            "rejected": self._rejected_count(),
         }
-
-    # ------------------------------------------------------------- zdjęcie
-    async def shoot(self) -> dict:
-        if self.session_dir is None or self.label is None:
-            raise RuntimeError("Ustaw sesję i nazwę przed zdjęciem.")
-        label = self.label
-        index = self._next_index(label)
-        stem = f"{label}_{index}"
-        png = self.session_dir / label / f"{stem}.png"
-
-        if self._use_dummy():
-            await asyncio.get_event_loop().run_in_executor(None, _dummy_shot, png)
-        else:
-            await self._rpicam(png)
-
-        dng = png.with_suffix(".dng")
-        self._thumb(png)
-        return {
-            "label": label, "index": index,
-            "png": png.name, "dng": dng.name if dng.exists() else None,
-            "counts": self._counts(),
-        }
-
-    def _use_dummy(self) -> bool:
-        return self.config.force_dummy or shutil.which(self.config.rpicam_still) is None
-
-    def resolve_tuning(self) -> str | None:
-        return resolve_tuning(self.config.profile)
 
     def diagnostics(self) -> dict:
-        """Stan gotowości do zdjęcia — pokazywany w UI, żeby problem był widać z góry."""
-        tuning = self.resolve_tuning()
+        """Stan gotowości — pokazywany stale w UI, żeby blokada była widoczna (§12.12)."""
+        tuning = resolve_tuning(self.config.profile)
         warnings = []
-        if not self._use_dummy() and tuning is None:
-            warnings.append("brak pliku strojenia scientific — zdjęcia w domyślnym tuningu")
+        if self.config.dummy:
+            warnings.append("ATRAPA — zdjęcia syntetyczne, nie są materiałem pomiarowym")
         return {
-            "dummy": self._use_dummy(),
+            "dummy": self.config.dummy,
             "rpicam_present": shutil.which(self.config.rpicam_still) is not None,
+            "profile_id": self.config.profile_id,
+            "profile_sha256": self.config.profile_sha256,
             "tuning_file": tuning,
+            "tuning_file_sha256": self.config.tuning_sha256,
+            "shutter_us": self.config.profile.get("shutter_us"),
+            "blocked": self.config.blocking_error,
             "warnings": warnings,
         }
 
-    def _command(self, png: Path) -> list[str]:
-        p = self.config.profile
-        isp = p.get("isp", {})
-        w, h = p["resolution"]
-        red, blue = p["awb_gains"]
-        cmd = [self.config.rpicam_still, "-o", str(png), "--encoding", "png",
-               "--width", str(w), "--height", str(h),
-               "--shutter", str(p["shutter_us"]), "--gain", str(p["analogue_gain"]),
-               "--awbgains", f"{red},{blue}",
-               "--sharpness", str(isp.get("sharpness", 0)),
-               "--denoise", str(isp.get("denoise", "off")),
-               "--saturation", str(isp.get("saturation", 1.0)),
-               "--contrast", str(isp.get("contrast", 1.0)),
-               "--brightness", str(isp.get("brightness", 0)),
-               "--immediate", "--raw"]   # --raw → DNG obok PNG
-        tuning = self.resolve_tuning()
-        if tuning:
-            cmd += ["--tuning-file", tuning]   # brak → domyślny tuning (jak photoSingle)
-        return cmd
+    def _require_ready(self) -> None:
+        if self.config.blocking_error:
+            raise RuntimeError(self.config.blocking_error)
 
-    async def _rpicam(self, png: Path) -> None:
+    # ------------------------------------------------------------- zdjęcie
+    async def shoot(self) -> dict:
+        self._require_ready()
+        if self.session_dir is None or self.label is None:
+            raise RuntimeError("Ustaw sesję i nazwę przed zdjęciem.")
+
+        label = self.label
+        index = self._next_index(label)      # numer rośnie dopiero po przyjęciu (§5)
+        stem = f"{label}_{index}"
+        staging = self.session_dir / ".tmp" / stem
+        if staging.exists():
+            shutil.rmtree(staging)
+        staging.mkdir(parents=True)
+
+        png = staging / f"{stem}.png"
+        meta_path = staging / f"{stem}_meta.json"
+        command = engine.build_command(
+            {"rpicam_still": self.config.rpicam_still}, self.config.profile,
+            png, meta_path)
+
+        loop = asyncio.get_event_loop()
+        if self.config.dummy:
+            await loop.run_in_executor(None, _dummy_shot, png, meta_path,
+                                       self.config.profile)
+        else:
+            await self._rpicam(command)
+
+        # Reszta jest synchroniczna i policzalna (sumy kontrolne ~40 MB), więc idzie
+        # do wątku roboczego — inaczej API i podgląd zamierają na czas zapisu (§12.13).
+        return await loop.run_in_executor(
+            None, self._finish, staging, stem, label, index, command)
+
+    def _finish(self, staging: Path, stem: str, label: str, index: int,
+                command: list) -> dict:
+        png = staging / f"{stem}.png"
+        meta_path = staging / f"{stem}_meta.json"
+        if not png.exists():
+            raise RuntimeError(f"rpicam-still nie zapisał obrazu: {png.name}")
+        try:
+            raw_meta = engine.read_json(meta_path)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                f"Nie da się odczytać metadanych ujęcia ({exc}). Zdjęcie "
+                "z niezweryfikowanymi parametrami jest gorsze niż brak zdjęcia.")
+
+        checks, warnings = engine.verify_contract(raw_meta, self.config.profile,
+                                                  self.reference)
+        violations = [c for c in checks if c["status"] in ("naruszenie", "brak")]
+        accepted = not violations
+
+        session_like = {"tools": self._tool_versions()}
+        enriched = engine.enrich_meta(raw_meta, self.config.profile,
+                                      self.config.profile_sha256,
+                                      self.config.tuning_sha256, session_like, command)
+        if self.config.dummy:
+            enriched["_dummy"] = True
+        engine.write_json(meta_path, enriched)
+
+        timestamp = engine.now_iso()
+        if accepted:
+            capture_id, destination = stem, self.session_dir / label
+        else:
+            # Odrzucone idą do własnego katalogu ze znacznikiem czasu: numer rośnie
+            # dopiero po przyjęciu, więc dwa odrzucenia pod rząd mają ten sam numer
+            # i bez tego drugie kasowałoby dowód pierwszego (§5).
+            capture_id = f"{stem}_{datetime.now().strftime('%H%M%S')}"
+            destination = self.session_dir / "odrzucone" / label / capture_id
+            suffix = 1
+            while destination.exists():
+                suffix += 1
+                destination = destination.with_name(f"{capture_id}_{suffix}")
+                capture_id = destination.name
+
+        record = {
+            "capture_id": capture_id, "session": self.session_id, "label": label,
+            "index": index, "timestamp": timestamp,
+            "profile_id": self.config.profile_id,
+            "profile_sha256": self.config.profile_sha256,
+            "tuning_file_sha256": self.config.tuning_sha256,
+            "dummy": self.config.dummy,
+            "qc": {"status": "not_run", "reason": "QC §6 nieobjęte tym narzędziem"},
+            "contract": {"status": "ok" if accepted else "rejected",
+                         "checks": checks, "warnings": warnings},
+            "command_line": command,
+            "tools": session_like["tools"],
+        }
+        engine.write_json(staging / f"{stem}_acquisition.json", record)
+
+        sums = {p.name: engine.sha256_file(p) for p in sorted(staging.iterdir())}
+        for name, digest in sums.items():                    # kontrola po zapisie (§11)
+            if engine.sha256_file(staging / name) != digest:
+                raise RuntimeError(f"Suma kontrolna {name} nie zgadza się po zapisie.")
+        checksums = "\n".join(f"{d}  {n}" for n, d in sorted(sums.items())) + "\n"
+
+        if accepted:
+            destination.mkdir(parents=True, exist_ok=True)
+            # Ostatnia linia obrony: gdyby numer mimo wszystko się powtórzył, zapis ma
+            # się zatrzymać, a nie nadpisać wcześniejsze ujęcie (§0 — archiwum jest
+            # niezmienne). Pliki zostają w .tmp i przy starcie sesji trafią do odrzucone/.
+            collisions = [n for n in sums if (destination / n).exists()]
+            if collisions:
+                raise RuntimeError(
+                    f"Ujęcie {stem} już istnieje ({', '.join(collisions)}). "
+                    "Zapis wstrzymany, żeby nie nadpisać wcześniejszego ujęcia.")
+            for name in sorted(sums):                        # marker na końcu
+                os.replace(staging / name, destination / name)
+            (destination / f"{stem}.sha256").write_text(checksums, encoding="utf-8")
+            engine.fsync_dir(destination)
+            shutil.rmtree(staging, ignore_errors=True)
+        else:
+            # Przeniesienie całego katalogu roboczego jest atomowe, więc odrzucone
+            # ujęcie nigdy nie zostaje w połowie zapisane.
+            (staging / f"{stem}.sha256").write_text(checksums, encoding="utf-8")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.rename(staging, destination)
+            engine.fsync_dir(destination.parent)
+
+        if accepted:
+            if self.reference["reference_ccm"] is None:
+                self.reference["reference_ccm"] = raw_meta.get("ColourCorrectionMatrix")
+            if self.reference["reference_lux"] is None:
+                self.reference["reference_lux"] = raw_meta.get("Lux")
+            self._thumb(destination / f"{stem}.png")
+
+        self._manifest({
+            "capture_id": capture_id, "session": self.session_id, "label": label,
+            "index": index, "timestamp": timestamp,
+            "profile_id": self.config.profile_id,
+            "contract_status": record["contract"]["status"],
+            "dummy": self.config.dummy,
+            "image_sha256": sums.get(f"{stem}.png"),
+        })
+        self._journal("capture_accepted" if accepted else "capture_rejected", {
+            "capture_id": capture_id, "label": label, "index": index,
+            "path": str(destination / f"{stem}.png"),
+            "violations": [f"{c['field']}: zmierzone {c['actual']}, "
+                           f"oczekiwane {c['expected']}" for c in violations],
+            "warnings": warnings,
+        })
+
+        dng = destination / f"{stem}.dng"
+        return {
+            "label": label, "index": index, "accepted": accepted,
+            "capture_id": capture_id,
+            "png": f"{stem}.png", "dng": dng.name if dng.exists() else None,
+            "contract": record["contract"]["status"],
+            "violations": [f"{c['field']}: zmierzone {c['actual']}, "
+                           f"profil {c['expected']}" for c in violations],
+            "warnings": warnings,
+            "counts": self._counts(), "rejected": self._rejected_count(),
+            "dummy": self.config.dummy,
+        }
+
+    def _tool_versions(self) -> dict:
+        if self._tools is None:
+            if self.config.dummy:
+                self._tools = {"rpicam": "atrapa (brak rpicam-still)", "libcamera": None}
+            else:
+                self._tools = engine.tool_versions(self.config.rpicam_still)
+        return self._tools
+
+    async def _rpicam(self, command: list[str]) -> None:
         proc = await asyncio.create_subprocess_exec(
-            *self._command(png), stdout=asyncio.subprocess.DEVNULL,
+            *command, stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE)
         _, err = await proc.communicate()
         if proc.returncode != 0:
             raise RuntimeError(f"rpicam-still kod {proc.returncode}: "
                                f"{err.decode('utf-8', 'replace').strip()}")
+
+    # ------------------------------------------------------------- zapisy pomocnicze
+    def _manifest(self, row: dict) -> None:
+        path = self.session_dir / "manifest.csv"
+        exists = path.exists()
+        with path.open("a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=MANIFEST_COLUMNS)
+            if not exists:
+                writer.writeheader()
+            writer.writerow(row)
+            f.flush()
+            os.fsync(f.fileno())
+
+    def _journal(self, event: str, payload: dict) -> None:
+        if self.session_dir is None:
+            return
+        with (self.session_dir / "journal.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": engine.now_iso(), "event": event, **payload},
+                               ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
 
     def _thumb(self, png: Path) -> None:
         try:
@@ -204,10 +424,25 @@ class CaptureController:
         return p if p.exists() else None
 
 
-def _dummy_shot(png: Path) -> None:
-    """Atrapa: syntetyczny szary PNG + placeholder DNG (dev bez kamery)."""
+def _dummy_shot(png: Path, meta_path: Path, profile: dict) -> None:
+    """Atrapa: syntetyczny PNG, placeholder DNG i metadane zgodne z profilem.
+
+    Metadane muszą przechodzić kontrakt, inaczej dev nie przetestuje ścieżki przyjęcia
+    ujęcia. Znacznik `_dummy` w metadanych zapewnia, że takie zdjęcie nie zostanie
+    później wzięte za materiał pomiarowy.
+    """
     import numpy as np
     rng = np.random.default_rng()
     img = rng.integers(60, 190, size=(760, 1014, 3), dtype=np.uint8)
     Image.fromarray(img).save(png)
     png.with_suffix(".dng").write_bytes(b"DNG-PLACEHOLDER (dev)\n")
+    red, blue = profile["awb_gains"]
+    meta_path.write_text(json.dumps({
+        "ExposureTime": profile["shutter_us"],
+        "AnalogueGain": float(profile["analogue_gain"]),
+        "DigitalGain": 1.0,
+        "ColourGains": [float(red), float(blue)],
+        "ColourCorrectionMatrix": [1.8, -0.6, -0.2, -0.3, 1.6, -0.3, 0.1, -0.7, 1.6],
+        "Lux": 400.0,
+        "_dummy": True,
+    }), encoding="utf-8")

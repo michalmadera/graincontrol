@@ -73,8 +73,12 @@ class RpicamBackend:
                "--awbgains", ",".join(str(g) for g in self.profile["awb_gains"]),
                "-o", "-"]
         tuning = resolve_tuning(self.profile)
-        if tuning:
-            cmd += ["--tuning-file", tuning]
+        if not tuning:
+            # Podgląd na domyślnym strojeniu pokazywałby inny obraz niż zapisany —
+            # operator ustawiałby scenę pod coś, czego nie dostanie (§12.9).
+            raise CameraError(
+                f"Brak pliku strojenia z profilu: {self.profile.get('tuning_file')}")
+        cmd += ["--tuning-file", tuning]
         return cmd
 
     async def frames(self) -> AsyncIterator[bytes]:
@@ -113,7 +117,7 @@ class RpicamBackend:
 
 def make_backend(config):
     """rpicam-vid, jeśli jest w systemie; inaczej atrapa (dev/test bez Pi)."""
-    if config.force_dummy:
+    if config.dummy or config.blocking_error:
         return DummyBackend()
     if shutil.which(config.rpicam_vid):
         return RpicamBackend(config.profile, config.rpicam_vid)
@@ -147,6 +151,7 @@ class CameraManager:
             self.state = "preview"
         while True:
             await self._resume.wait()          # po ujęciu blokuje aż do wznowienia
+            failed = False
             try:
                 async for frame in self._backend.frames():
                     if not self._resume.is_set():
@@ -158,10 +163,10 @@ class CameraManager:
                 await self._close_preview_device()
                 raise                          # klient się rozłączył — kończymy
             except Exception:
-                pass                           # błąd urządzenia — spróbuj po wznowieniu
+                failed = True                  # np. brak pliku strojenia — nie kręć się
             finally:
                 await self._close_preview_device()
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(2.0 if failed else 0.2)
 
     async def run_exclusive(
             self, work: Callable[[], Awaitable], on_state=None):

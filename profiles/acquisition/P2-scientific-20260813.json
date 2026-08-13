@@ -1,0 +1,57 @@
+{
+  "profile_id": "P2-scientific-20260813",
+  "camera": "imx477 / RPi HQ",
+  "resolution": [4056, 3040],
+  "shutter_us": 82000,
+  "analogue_gain": 1.0,
+  "awb_gains": [2.36, 2.19],
+  "tuning_file": "/usr/share/libcamera/ipa/rpi/pisp/imx477_scientific.json",
+  "tuning_file_sha256": "0ae91ed9bba8fe99e5fa73cf7e49d5759e3c2c795ff63ac351b84105685c82f4",
+  "isp": {
+    "sharpness": 0,
+    "denoise": "off",
+    "saturation": 1.0,
+    "contrast": 1.0,
+    "brightness": 0
+  },
+  "encoding": "png",
+  "raw": true,
+  "immediate": true,
+  "contract": {
+    "exposure_rel": 0.01,
+    "analogue_gain_rel": 0.01,
+    "colour_gains_rel": 0.01,
+    "digital_gain_abs": 0.01,
+    "ccm_abs": 1e-6,
+    "lux_warn_rel": 0.05
+  },
+  "optics": {
+    "aperture": "f/4",
+    "focus": "zablokowana",
+    "distance_mm": 290,
+    "focal_length_mm": 8,
+    "focal_length_source": "wyliczona z pomiaru skali 53,86 um/px, nie z opisu obiektywu"
+  },
+  "reference_patches": [
+    { "name": "white", "roi": [3728, 232, 294, 145] },
+    { "name": "grey",  "roi": [3728,  60, 294, 158] }
+  ],
+  "focus_roi": null,
+  "calibration": {
+    "flatfield_id": null,
+    "scale_id": null,
+    "colorchart_id": null
+  },
+  "expected": {
+    "white_patch_L": 56.01,
+    "max_dn": 177,
+    "focus_metric": null
+  },
+  "notes": {
+    "shutter": "82 ms przyjete na podstawie klatki wzorcowej docs/82ms/shutter_82000.png. Wykorzystuje 60% zakresu (P99,9 kadru = 154 DN, max 177 DN, zero klipu) zamiast zalecanych w rekomendacji §4 85-90%. Swiadomy kompromis: mniejszy zapas sygnalu w zamian za krotszy czas.",
+    "ekspozycja_wg_materialu": "Wzorzec 'white' nie jest najjasniejszym obiektem kadru - przy 82 ms ma P99 = 154 DN, a najjasniejsze ziarna 167 DN. Czas naswietlania jest wiec dobierany po materiale, a wzorzec sluzy wylacznie jako kotwica skali L* i punkt neutralny a*/b*.",
+    "wzorzec_szary": "Pole szare ma fakture rastrowa: sd 5,42 DN wobec 2,29 DN na bieli, sd L* 2,22 przekracza prog ostrzegawczy 1,5 z §6. Punktem neutralnym dla a*/b* ma byc biel, szarosc jest kontrola drugiego rzedu.",
+    "plytka_obrocona": "Karta jest obrocona o ok. 0,5-1,3 stopnia, wiec ROI sa wciete o ~6 px od kazdej krawedzi pola. Kazde przesuniecie karty uniewaznia te wspolrzedne.",
+    "pole_oswietlenia": "Rozpietosc P98 L* po siatce 8x6 na klatce wzorcowej wynosi 10,2 jedn. (49,9-60,1) - strojenie scientific nie ma bloku ALSC. Korekcja flat-field jest obowiazkowa przed zbieraniem materialu."
+  }
+}
