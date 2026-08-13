@@ -77,16 +77,24 @@ W prawym górnym rogu:
 
 ```
 dane/sesja_RRRRMMDD_GGMM/
-  BAD/   BAD_1.png  BAD_1.dng  BAD_2.png  BAD_2.dng …
-  NICE/  NICE_1.png NICE_1.dng …
+  manifest.csv                 jeden wiersz na ujęcie
+  journal.jsonl                dziennik: start sesji, każde ujęcie, każde odrzucenie
+  BAD/   BAD_1.png  BAD_1.dng  BAD_1_meta.json  BAD_1_acquisition.json  BAD_1.sha256
+  NICE/  NICE_1.png …
+  odrzucone/BAD/               ujęcia niezgodne z profilem, razem z przyczyną
 ```
+
+Każde ujęcie przechodzi kontrakt akwizycji (§5) liczony z metadanych `rpicam-still`.
+Odrzucenie **nie zwiększa numeru** — powtórz ujęcie, numeracja zostaje ciągła.
+`*.sha256` powstaje jako ostatni i jest markerem kompletności: plik zdjęcia bez niego
+to zapis przerwany i przy starcie kolejnej sesji trafia do `odrzucone/niedokonczone/`.
 
 Domyślnie `dane/` w katalogu repo. Inny katalog:
 ```bash
 export GRAINCONTROL_DANE=/media/usb/kruszywo-dane
 ```
 
-Inny profil parametrów (domyślnie P1-scientific):
+Inny profil parametrów (domyślnie P2-scientific-20260813, 82 ms):
 ```bash
 export GRAINCONTROL_PROFILE=/sciezka/do/profilu.json
 ```
@@ -98,6 +106,8 @@ export GRAINCONTROL_PROFILE=/sciezka/do/profilu.json
 | `uvicorn: command not found` | wołaj `python3 -m uvicorn ...` (nie `uvicorn ...`) |
 | `No module named uvicorn` | niezainstalowany — patrz krok 2 (venv albo `pip install --user --break-system-packages`) |
 | UI wisi „łączenie z kamerą" | stary serwer chodzi — `pkill -f "uvicorn server.main"` i odpal ponownie; w przeglądarce Ctrl+Shift+R |
+| czerwony pasek „ZDJĘCIA ZABLOKOWANE" | profil jest niekompletny albo plik strojenia nie zgadza się z sumą kontrolną w profilu. Treść paska podaje konkretną przyczynę — nie obchodź jej, bo to jedyne zabezpieczenie przed zbieraniem materiału w innym torze obrazowym niż deklarowany |
+| ujęcie „ODRZUCONE" z rozbieżnością | kamera zwróciła inne parametry niż profil. Pliki są w `odrzucone/` jako dowód; powtórz ujęcie. Powtarzające się odrzucenia oznaczają, że stanowisko się rozjechało |
 | plakietka „ATRAPA" na Pi | `rpicam-still` nie na PATH → `sudo apt install rpicam-apps`, sprawdź `rpicam-hello` |
 | czerwony toast po ZDJĘCIU | błąd `rpicam-still` — treść błędu jest w toaście i w terminalu |
 | podgląd czarny, ale zdjęcia OK | to tylko `rpicam-vid` (podgląd) — daj znać, dostroję |

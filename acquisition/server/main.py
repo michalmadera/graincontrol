@@ -1,7 +1,10 @@
-"""Serwer prostego narzędzia akwizycji — FastAPI + React (apka webowa na cały ekran).
+"""Serwer narzędzia akwizycji — FastAPI + React (apka webowa na cały ekran).
 
 Przepływ: START SESJI → wpisz nazwę (BAD/NICE…) → ZDJĘCIE ×N → zmień nazwę → …
-Zapis PNG+DNG na zamrożonych parametrach do `dane/sesja_.../NAZWA/`.
+Zdjęcia powstają **tym samym silnikiem co CLI** (`captureSample.py`): ta sama linia
+polecenia, ten sam kontrakt akwizycji sprawdzany po każdym ujęciu, te same metadane
+i sumy kontrolne. Zapis do `dane/sesja_.../NAZWA/`, ujęcia niezgodne z profilem do
+`odrzucone/`.
 
 Uruchomienie:
     uvicorn acquisition.server.main:app --host 0.0.0.0 --port 8000
@@ -38,12 +41,14 @@ def create_app() -> FastAPI:
     def state() -> dict:
         return {**controller.state(), "camera": camera.snapshot(),
                 "data_root": str(config.data_root),
-                "profile_id": config.profile.get("profile_id"),
                 **controller.diagnostics()}
 
     @app.post("/api/session")
     def start_session() -> dict:
-        return {**controller.start_session(), "camera": camera.snapshot()}
+        try:
+            return {**controller.start_session(), "camera": camera.snapshot()}
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc))
 
     @app.post("/api/label")
     def set_label(body: LabelBody) -> dict:
@@ -54,9 +59,15 @@ def create_app() -> FastAPI:
 
     @app.post("/api/shoot")
     async def shoot() -> dict:
+        # Blokada profilu/strojenia jest stanem stanowiska, nie błędem żądania —
+        # ma być widoczna stale, a nie dopiero po naciśnięciu migawki (§12.12).
+        if config.blocking_error:
+            raise HTTPException(409, config.blocking_error)
         if controller.session_dir is None or controller.label is None:
             raise HTTPException(409, "Ustaw sesję i nazwę przed zdjęciem.")
         try:
+            # Ujęcie odrzucone przez kontrakt to poprawna odpowiedź (accepted=false),
+            # nie błąd serwera — operator ma zobaczyć rozbieżność i powtórzyć ujęcie.
             return await camera.run_exclusive(controller.shoot)
         except CameraBusy as exc:
             raise HTTPException(409, str(exc))
