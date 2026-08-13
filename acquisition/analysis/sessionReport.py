@@ -82,7 +82,10 @@ def check_integrity(session: Path, captures: list[dict]) -> dict:
                     issues["sumy"].append(name)
         png = folder / f"{stem}.png"
         if png.exists():
-            on_disk[stem] = hashlib.sha256(png.read_bytes()).hexdigest()
+            # klucz jak w manifeście: odrzucone mają capture_id ze znacznikiem czasu,
+            # bo numer rośnie dopiero po przyjęciu i sam stem nie jest unikalny
+            on_disk[record.get("capture_id", stem)] = hashlib.sha256(
+                png.read_bytes()).hexdigest()
 
     # PNG bez markera .sha256 = zapis przerwany albo ręczna ingerencja
     for png in session.rglob("*.png"):
@@ -294,7 +297,7 @@ def report(session: Path, args) -> dict:
     for record in rejected:
         bad = [c for c in record.get("contract", {}).get("checks", [])
                if c["status"] in ("naruszenie", "brak")]
-        print(f"  ✗ {record['_stem']}: " + "; ".join(
+        print(f"  ✗ {record.get('capture_id', record['_stem'])}: " + "; ".join(
             f"{c['field']} zmierzone {c['actual']}, profil {c['expected']}" for c in bad))
 
     stability = parameter_stability(accepted)

@@ -14,7 +14,8 @@ Struktura na dysku:
         journal.jsonl                dziennik dopisywany, nigdy edytowany
         BAD/   BAD_1.png  BAD_1.dng  BAD_1_meta.json  BAD_1_acquisition.json
                BAD_1.sha256          ← marker kompletności, pisany na końcu
-        odrzucone/BAD/ …             ujęcia odrzucone przez kontrakt, z przyczyną
+        odrzucone/BAD/BAD_3_123500/  ujęcie odrzucone: własny katalog ze znacznikiem
+                                     czasu, bo numer rośnie dopiero po przyjęciu
         .thumb/  BAD_1.jpg …         miniatury do UI, kasowalne
         .tmp/                        katalog roboczy pojedynczego ujęcia
 
@@ -147,13 +148,38 @@ class CaptureController:
         rejected = self.session_dir / "odrzucone" if self.session_dir else None
         return len(list(rejected.rglob("*.png"))) if rejected and rejected.exists() else 0
 
+    def _manifest_rows(self) -> list[dict]:
+        path = self.session_dir / "manifest.csv" if self.session_dir else None
+        if not path or not path.exists():
+            return []
+        with path.open(newline="", encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+
     def _next_index(self, label: str) -> int:
-        folder = self.session_dir / label
+        """Najwyższy numer **kiedykolwiek użyty** w tej etykiecie, plus jeden.
+
+        Wyliczanie numeru z samych plików na dysku miało wadę: skasowanie nieudanego
+        zdjęcia zwalniało numer, kolejne ujęcie dostawało ten sam identyfikator
+        i nadpisywało poprzednie. W manifeście zostawały wtedy dwa wiersze o tym samym
+        `capture_id` i różnych sumach kontrolnych — archiwum ma być niezmienne (§0).
+        Manifest pamięta numery skasowanych ujęć, więc identyfikator nie wraca do obiegu.
+
+        Ujęcia odrzucone przez kontrakt numeru **nie** zajmują (§5) — liczone są tylko
+        wiersze o statusie `ok`.
+        """
         highest = 0
-        for png in folder.glob(f"{label}_*.png"):
-            m = re.search(rf"{re.escape(label)}_(\d+)\.png$", png.name)
-            if m:
-                highest = max(highest, int(m.group(1)))
+        folder = self.session_dir / label
+        if folder.exists():
+            for png in folder.glob(f"{label}_*.png"):
+                m = re.fullmatch(rf"{re.escape(label)}_(\d+)\.png", png.name)
+                if m:
+                    highest = max(highest, int(m.group(1)))
+        for row in self._manifest_rows():
+            if row.get("label") == label and row.get("contract_status") == "ok":
+                try:
+                    highest = max(highest, int(row["index"]))
+                except (KeyError, TypeError, ValueError):
+                    pass
         return highest + 1
 
     def state(self) -> dict:
@@ -246,8 +272,22 @@ class CaptureController:
         engine.write_json(meta_path, enriched)
 
         timestamp = engine.now_iso()
+        if accepted:
+            capture_id, destination = stem, self.session_dir / label
+        else:
+            # Odrzucone idą do własnego katalogu ze znacznikiem czasu: numer rośnie
+            # dopiero po przyjęciu, więc dwa odrzucenia pod rząd mają ten sam numer
+            # i bez tego drugie kasowałoby dowód pierwszego (§5).
+            capture_id = f"{stem}_{datetime.now().strftime('%H%M%S')}"
+            destination = self.session_dir / "odrzucone" / label / capture_id
+            suffix = 1
+            while destination.exists():
+                suffix += 1
+                destination = destination.with_name(f"{capture_id}_{suffix}")
+                capture_id = destination.name
+
         record = {
-            "capture_id": stem, "session": self.session_id, "label": label,
+            "capture_id": capture_id, "session": self.session_id, "label": label,
             "index": index, "timestamp": timestamp,
             "profile_id": self.config.profile_id,
             "profile_sha256": self.config.profile_sha256,
@@ -265,28 +305,40 @@ class CaptureController:
         for name, digest in sums.items():                    # kontrola po zapisie (§11)
             if engine.sha256_file(staging / name) != digest:
                 raise RuntimeError(f"Suma kontrolna {name} nie zgadza się po zapisie.")
+        checksums = "\n".join(f"{d}  {n}" for n, d in sorted(sums.items())) + "\n"
 
-        target = (self.session_dir / label if accepted
-                  else self.session_dir / "odrzucone" / label)
-        target.mkdir(parents=True, exist_ok=True)
-        marker = f"{stem}.sha256"
-        for name in sorted(sums):                            # marker na końcu
-            os.replace(staging / name, target / name)
-        (target / marker).write_text(
-            "\n".join(f"{d}  {n}" for n, d in sorted(sums.items())) + "\n",
-            encoding="utf-8")
-        engine.fsync_dir(target)
-        shutil.rmtree(staging, ignore_errors=True)
+        if accepted:
+            destination.mkdir(parents=True, exist_ok=True)
+            # Ostatnia linia obrony: gdyby numer mimo wszystko się powtórzył, zapis ma
+            # się zatrzymać, a nie nadpisać wcześniejsze ujęcie (§0 — archiwum jest
+            # niezmienne). Pliki zostają w .tmp i przy starcie sesji trafią do odrzucone/.
+            collisions = [n for n in sums if (destination / n).exists()]
+            if collisions:
+                raise RuntimeError(
+                    f"Ujęcie {stem} już istnieje ({', '.join(collisions)}). "
+                    "Zapis wstrzymany, żeby nie nadpisać wcześniejszego ujęcia.")
+            for name in sorted(sums):                        # marker na końcu
+                os.replace(staging / name, destination / name)
+            (destination / f"{stem}.sha256").write_text(checksums, encoding="utf-8")
+            engine.fsync_dir(destination)
+            shutil.rmtree(staging, ignore_errors=True)
+        else:
+            # Przeniesienie całego katalogu roboczego jest atomowe, więc odrzucone
+            # ujęcie nigdy nie zostaje w połowie zapisane.
+            (staging / f"{stem}.sha256").write_text(checksums, encoding="utf-8")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.rename(staging, destination)
+            engine.fsync_dir(destination.parent)
 
         if accepted:
             if self.reference["reference_ccm"] is None:
                 self.reference["reference_ccm"] = raw_meta.get("ColourCorrectionMatrix")
             if self.reference["reference_lux"] is None:
                 self.reference["reference_lux"] = raw_meta.get("Lux")
-            self._thumb(target / f"{stem}.png")
+            self._thumb(destination / f"{stem}.png")
 
         self._manifest({
-            "capture_id": stem, "session": self.session_id, "label": label,
+            "capture_id": capture_id, "session": self.session_id, "label": label,
             "index": index, "timestamp": timestamp,
             "profile_id": self.config.profile_id,
             "contract_status": record["contract"]["status"],
@@ -294,16 +346,17 @@ class CaptureController:
             "image_sha256": sums.get(f"{stem}.png"),
         })
         self._journal("capture_accepted" if accepted else "capture_rejected", {
-            "capture_id": stem, "label": label, "index": index,
-            "path": str(target / f"{stem}.png"),
+            "capture_id": capture_id, "label": label, "index": index,
+            "path": str(destination / f"{stem}.png"),
             "violations": [f"{c['field']}: zmierzone {c['actual']}, "
                            f"oczekiwane {c['expected']}" for c in violations],
             "warnings": warnings,
         })
 
-        dng = target / f"{stem}.dng"
+        dng = destination / f"{stem}.dng"
         return {
             "label": label, "index": index, "accepted": accepted,
+            "capture_id": capture_id,
             "png": f"{stem}.png", "dng": dng.name if dng.exists() else None,
             "contract": record["contract"]["status"],
             "violations": [f"{c['field']}: zmierzone {c['actual']}, "

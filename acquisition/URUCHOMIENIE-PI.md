@@ -71,7 +71,9 @@ Otwórz w przeglądarce:
 W prawym górnym rogu:
 - **brak plakietki „ATRAPA"** → `rpicam-still` widziany, będzie robić prawdziwe zdjęcia ✅
 - **plakietka „ATRAPA (bez kamery)"** → Pi nie widzi rpicam (sprawdź instalację kamery)
-- **żółty pasek** → np. brak pliku strojenia scientific; zdjęcie i tak się zrobi (domyślny tuning)
+- **czerwony pasek „ZDJĘCIA ZABLOKOWANE"** → brak pliku strojenia z profilu albo niezgodna
+  jego suma kontrolna; zdjęcia są zablokowane, bo powstałyby w innym torze obrazowym
+- obok nazwa profilu i czas naświetlania — sprawdź, czy to ten, którym chcesz zbierać
 
 ## Gdzie lądują zdjęcia
 
@@ -81,7 +83,7 @@ dane/sesja_RRRRMMDD_GGMM/
   journal.jsonl                dziennik: start sesji, każde ujęcie, każde odrzucenie
   BAD/   BAD_1.png  BAD_1.dng  BAD_1_meta.json  BAD_1_acquisition.json  BAD_1.sha256
   NICE/  NICE_1.png …
-  odrzucone/BAD/               ujęcia niezgodne z profilem, razem z przyczyną
+  odrzucone/BAD/BAD_3_123500/  ujęcie niezgodne z profilem, razem z przyczyną
 ```
 
 Każde ujęcie przechodzi kontrakt akwizycji (§5) liczony z metadanych `rpicam-still`.

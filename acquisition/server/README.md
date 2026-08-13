@@ -15,9 +15,18 @@ ZDJĘCIE ×N (przesypuj) → BAD/BAD_1.png + .dng + _meta.json + _acquisition.js
 zmień nazwę: NICE      → NICE/NICE_1.png …
 ```
 
-Ujęcie niezgodne z profilem trafia do `odrzucone/<NAZWA>/` razem z przyczyną i **nie
-zwiększa numeru** — operator powtarza je, a numeracja zostaje ciągła. Sesja ma
-`manifest.csv` (wiersz na ujęcie) i `journal.jsonl` (dziennik dopisywany).
+Ujęcie niezgodne z profilem trafia do `odrzucone/<NAZWA>/<NAZWA>_<n>_<HHMMSS>/` razem
+z przyczyną i **nie zwiększa numeru** — operator powtarza je, a numeracja zostaje ciągła.
+Odrzucone dostają własny katalog ze znacznikiem czasu, bo dwa odrzucenia pod rząd mają
+ten sam numer i bez tego drugie kasowałoby dowód pierwszego.
+
+Numer bierze się z **najwyższego kiedykolwiek użytego** w tej etykiecie, czytanego
+z manifestu — a nie z plików obecnych na dysku. Dzięki temu ręczne skasowanie nieudanego
+zdjęcia nie zwalnia identyfikatora do ponownego użycia. Zapis, który miałby nadpisać
+istniejące ujęcie, jest wstrzymywany (§0 — archiwum jest niezmienne).
+
+Sesja ma `manifest.csv` (wiersz na ujęcie) i `journal.jsonl` (dziennik dopisywany).
+Raport i odtworzenie indeksu: `acquisition/analysis/sessionReport.py`.
 
 ## Co jest sprawdzane po każdym ujęciu
 

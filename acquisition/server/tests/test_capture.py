@@ -95,7 +95,7 @@ async def _run(data_root: Path) -> int:
     r = await ctrl.shoot()
     assert r["accepted"] is False, r
     assert r["contract"] == "rejected" and r["violations"], r
-    assert (session_dir / "odrzucone" / "BAD" / f"{r['png']}").exists(), r
+    assert (session_dir / "odrzucone" / "BAD" / r["capture_id"] / r["png"]).exists(), r
     print(f"  odrzucone: {r['violations'][0][:60]}…")
 
     ctrl.reference["reference_ccm"] = original
@@ -103,13 +103,38 @@ async def _run(data_root: Path) -> int:
     assert r2["accepted"] and r2["index"] == r["index"], (r, r2)
     print(f"  powtórka po odrzuceniu ma ten sam numer: {r2['png']}")
 
+    # --- skasowanie pliku NIE zwalnia numeru (identyfikator nie wraca do obiegu)
+    highest = ctrl._next_index("NICE")
+    (session_dir / "NICE" / "NICE_2.png").unlink()
+    assert ctrl._next_index("NICE") == highest, "numer skasowanego ujęcia wrócił do obiegu"
+    print(f"  po skasowaniu NICE_2 następny numer to nadal {highest}")
+
+    # --- dwa odrzucenia pod rząd nie kasują się nawzajem
+    ctrl.set_label("BAD")
+    ctrl.reference["reference_ccm"] = [9.0] * 9
+    a = await ctrl.shoot()
+    b = await ctrl.shoot()
+    assert a["index"] == b["index"], (a, b)
+    assert a["capture_id"] != b["capture_id"], (a, b)
+    rejected_dirs = sorted(p.name for p in (session_dir / "odrzucone" / "BAD").iterdir())
+    assert len(rejected_dirs) == 3, rejected_dirs   # wcześniejsze + te dwa
+    print(f"  dwa odrzucenia z numerem {a['index']} zachowane osobno: "
+          f"{a['capture_id']}, {b['capture_id']}")
+    ctrl.reference["reference_ccm"] = original
+
     # --- manifest i dziennik
-    manifest = (session_dir / "manifest.csv").read_text().splitlines()
-    assert len(manifest) == 1 + 7, manifest          # nagłówek + 5 + odrzucone + powtórka
+    import csv as _csv
+    with (session_dir / "manifest.csv").open(newline="") as f:
+        manifest = list(_csv.DictReader(f))
+    ids = [row["capture_id"] for row in manifest]
+    assert len(ids) == len(set(ids)), f"powtórzony capture_id w manifeście: {ids}"
+    accepted_rows = [r for r in manifest if r["contract_status"] == "ok"]
+    rejected_rows = [r for r in manifest if r["contract_status"] == "rejected"]
+    assert len(accepted_rows) == 6 and len(rejected_rows) == 3, manifest
     events = [json.loads(x)["event"] for x in
               (session_dir / "journal.jsonl").read_text().splitlines()]
-    assert events.count("capture_rejected") == 1 and events.count("capture_accepted") == 6, events
-    print(f"  manifest: {len(manifest) - 1} wierszy, dziennik: {len(events)} zdarzeń")
+    assert events.count("capture_rejected") == 3 and events.count("capture_accepted") == 6, events
+    print(f"  manifest: {len(manifest)} wierszy, wszystkie capture_id unikalne")
 
     # --- zapis przerwany zanikiem zasilania
     broken = session_dir / ".tmp" / "BAD_99"
