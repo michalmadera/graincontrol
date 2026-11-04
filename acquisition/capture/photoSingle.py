@@ -86,6 +86,8 @@ def main():
     ap = argparse.ArgumentParser(description="Jedno zdjęcie Pi HQ Camera (auto zablokowane)")
     ap.add_argument("--both", action="store_true",
                     help="zapisz DNG (RAW 12-bit) obok PNG")
+    ap.add_argument("--name", "-n", default=None,
+                    help="nazwa pliku bez rozszerzenia (domyślnie hq_capture_<timestamp>)")
     args = ap.parse_args()
     save_raw = args.both or SAVE_RAW
 
@@ -95,8 +97,10 @@ def main():
         output_dir = Path.home() / OUTPUT_DIR_NAME
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        image_path = output_dir / f"hq_capture_{timestamp}.png"
-        metadata_path = output_dir / f"hq_capture_{timestamp}_metadata.json"
+        # --name ustawia nazwę pliku; bez niego hq_capture_<timestamp>
+        base = Path(args.name).stem if args.name else f"hq_capture_{timestamp}"
+        image_path = output_dir / f"{base}.png"
+        metadata_path = output_dir / f"{base}_metadata.json"
 
         take_photo(image_path, metadata_path, save_raw=save_raw)
         m = load_metadata(metadata_path)
