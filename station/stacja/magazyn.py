@@ -59,6 +59,9 @@ class Magazyn:
     def wynik(self, id_pomiaru: str | None) -> dict | None:
         return next((w for w in self._dane.get("wyniki", []) if w.get("id_pomiaru") == id_pomiaru), None)
 
+    def ostatnie_wyniki(self, ile: int = 3) -> list[dict]:
+        return list(reversed(self._dane.get("wyniki", [])[-ile:]))
+
     # ------------------------------------------------------------- ustawienia
     @property
     def ustawienia(self) -> dict:

@@ -15,8 +15,25 @@ function Kalibracja({ stan, wyslij }) {
 function Gotowa({ stan, wyslij }) {
   return (
     <Tresc tytul="Maszyna gotowa" opis={`Następna próbka: nr ${stan.nastepny_numer}`}>
-      <button className="glowny" onClick={() => wyslij('nowy_pomiar')}>NOWY POMIAR</button>
+      {stan.kolejka_pelna
+        ? <p className="ostrzezenie" role="alert">Kolejka pełna — powiadom serwis</p>
+        : <button className="glowny" onClick={() => wyslij('nowy_pomiar')}>NOWY POMIAR</button>}
+      <OstatnieWyniki wyniki={stan.ostatnie_wyniki} />
     </Tresc>
+  )
+}
+
+function OstatnieWyniki({ wyniki }) {
+  if (!wyniki?.length) return null
+  return (
+    <ul className="ostatnie" aria-label="Ostatnie wyniki">
+      {wyniki.map((w) => (
+        <li key={w.id_pomiaru}>
+          Próbka {w.numer_probki}: {w.blad ? 'błąd analizy' : w.werdykt === 'akceptowalna' ? 'DOBRA' : 'ZŁA'}
+          {!w.blad && w.zrodlo_wyniku !== 'model' && ' (TEST)'}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -57,12 +74,26 @@ function BladZdjecia({ stan, wyslij }) {
   )
 }
 
-function Analiza() {
-  return <Tresc tytul="Analizuję…" opis="Wynik pojawi się na ekranie. Poczekaj." />
+function Analiza({ stan, wyslij }) {
+  if (stan.serwer_dostepny) {
+    return <Tresc tytul="Analizuję…" opis="Wynik pojawi się na ekranie. Poczekaj." />
+  }
+  return (
+    <Tresc tytul="Wynik po przywróceniu łączności" opis="Zdjęcie jest bezpieczne i wyśle się samo. Możesz pracować dalej.">
+      <button className="glowny" onClick={() => wyslij('dalej_bez_wyniku')}>DALEJ</button>
+    </Tresc>
+  )
 }
 
 function Wynik({ stan, wyslij }) {
   const w = stan.wynik
+  if (w.blad) {
+    return (
+      <Tresc tytul="Błąd analizy — powiadom serwis" opis={w.blad}>
+        <button className="glowny" onClick={() => wyslij('dalej')}>DALEJ</button>
+      </Tresc>
+    )
+  }
   const dobra = w.werdykt === 'akceptowalna'
   return (
     <section className="tresc">

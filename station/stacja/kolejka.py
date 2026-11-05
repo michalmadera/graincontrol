@@ -58,3 +58,9 @@ class Kolejka:
 
     def usun(self, wpis: Wpis) -> None:
         shutil.rmtree(wpis.katalog)
+
+    def odrzuc(self, wpis: Wpis) -> None:
+        """Poza kolejką i poza limitem, ale zostaje na dysku do wglądu serwisu."""
+        cel = self.katalog.with_name("kolejka_odrzucone")
+        cel.mkdir(exist_ok=True)
+        os.replace(wpis.katalog, cel / wpis.katalog.name)

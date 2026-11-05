@@ -42,6 +42,11 @@ export default function App() {
       <header className="pasek">
         <span className="tytul">GrainControl</span>
         {stan.numer_probki && <span className="numer">Próbka nr {stan.numer_probki}</span>}
+        {(!stan.serwer_dostepny || stan.w_kolejce > 1) && (
+          <span className={stan.serwer_dostepny ? 'lacznosc' : 'lacznosc offline'}>
+            {stan.serwer_dostepny ? 'Serwer działa' : 'Brak łączności z serwerem'} · w kolejce: {stan.w_kolejce}
+          </span>
+        )}
       </header>
       <Kroki ekran={stan.ekran} />
       <main className="glowna">

@@ -62,6 +62,10 @@ class Cykl:
             "pozostalo_s": pozostalo,
             "komunikat": self.komunikat,
             "wynik": self.magazyn.wynik(self.id_pomiaru) if self.krok == "wynik" else None,
+            "serwer_dostepny": self.wysylka.serwer_dostepny,
+            "w_kolejce": len(self.kolejka.oczekujace()),
+            "kolejka_pelna": self._kolejka_pelna(),
+            "ostatnie_wyniki": self.magazyn.ostatnie_wyniki(),
         }
 
     def akcja(self, nazwa: str) -> None:
@@ -72,6 +76,7 @@ class Cykl:
             "anuluj": self._anuluj,
             "ponow_zdjecie": self._ponow_zdjecie,
             "dalej": self._dalej,
+            "dalej_bez_wyniku": self._dalej_bez_wyniku,
         }.get(nazwa)
         if obsluga is None:
             raise ValueError(f"Nieznana akcja: {nazwa}")
@@ -101,8 +106,13 @@ class Cykl:
         self.krok = "gotowa"
 
     # ------------------------------------------------------------- pomiar
+    def _kolejka_pelna(self) -> bool:
+        return len(self.kolejka.oczekujace()) >= self.magazyn.ustawienia["limit_kolejki"]
+
     def _nowy_pomiar(self) -> None:
         self._wymagaj("gotowa")
+        if self._kolejka_pelna():
+            raise ValueError("Kolejka pełna")
         self.numer_probki = self.magazyn.pobierz_numer()
         self.id_pomiaru = str(uuid.uuid4())
         self.krok = "przygotowanie"
@@ -159,6 +169,14 @@ class Cykl:
 
     def _dalej(self) -> None:
         self._wymagaj("wynik")
+        self.numer_probki = None
+        self.id_pomiaru = None
+        self.krok = "gotowa"
+
+    def _dalej_bez_wyniku(self) -> None:
+        self._wymagaj("analiza")
+        if self.wysylka.serwer_dostepny:
+            raise ValueError("Serwer działa, wynik zaraz będzie")
         self.numer_probki = None
         self.id_pomiaru = None
         self.krok = "gotowa"

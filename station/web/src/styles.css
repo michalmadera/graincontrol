@@ -37,3 +37,9 @@ button { font: inherit; cursor: pointer; }
   background: var(--warn); border-radius: 10px; }
 .tresc h1.werdykt { font-size: 120px; font-weight: 900; line-height: 1; }
 .werdykt.dobra { color: var(--good); } .werdykt.zla { color: var(--bad); }
+.lacznosc { font-size: 20px; color: var(--dim); }
+.lacznosc.offline { color: var(--warn); font-weight: 700; }
+.ostrzezenie { margin: 0; padding: 24px 40px; font-size: 32px; font-weight: 700; color: #201800;
+  background: var(--warn); border-radius: 12px; }
+.ostatnie { list-style: none; margin: 0; padding: 0; font-size: 22px; color: var(--dim); text-align: center; }
+.ostatnie li { padding: 2px 0; }

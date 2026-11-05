@@ -74,6 +74,11 @@ def router_dev(app: FastAPI, konfiguracja: Konfiguracja) -> APIRouter:
         app.state.cykl.magazyn.zmien_ustawienia(zmiany)
         return app.state.cykl.magazyn.ustawienia
 
+    @dev.post("/serwis")
+    def serwis(zmiana: dict) -> dict:
+        app.state.wysylka.adres = zmiana["adres"]
+        return {"ok": True}
+
     @dev.post("/blad-zdjecia")
     def blad_zdjecia(cialo: Blad) -> dict:
         app.state.cykl.kamera.wymus_blad(cialo.tresc)
