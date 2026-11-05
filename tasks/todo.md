@@ -23,7 +23,7 @@ Plan: `tasks/plan.md`. Każde zadanie: pytest + Playwright na atrapach, commit l
 ## Faza 4: domknięcie
 - [x] T10 Tryb serwisowy i skanowanie
 - [x] T11 Klient Moonrakera
-- [ ] T12 Docker GPU i dokumentacja
+- [x] T12 Docker GPU i dokumentacja
 - [ ] T13 Odbiór
 
 ## Notatki
