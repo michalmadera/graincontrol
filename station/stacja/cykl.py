@@ -17,6 +17,8 @@ from .wysylka import Wysylka
 log = logging.getLogger(__name__)
 
 SZCZELINA_CZYSZCZENIA = 0.5
+KROKI_RUCHU = ("przygotowanie", "rozgarnianie", "czyszczenie", "kalibracja")
+KOMUNIKAT_PRZERWANIA = "Poprzednia operacja została przerwana."
 
 
 _BLEDY = [
@@ -47,12 +49,40 @@ class Cykl:
         self.kolejka = kolejka
         self.wysylka = wysylka
         self.tempo = tempo
-        self.krok = "gotowa"
-        self.numer_probki: int | None = None
-        self.id_pomiaru: str | None = None
-        self.komunikat: str | None = None
+        dziennik = magazyn.cykl()
+        self.numer_probki: int | None = dziennik.get("numer_probki")
+        self.id_pomiaru: str | None = dziennik.get("id_pomiaru")
+        self.komunikat: str | None = dziennik.get("komunikat")
+        self._krok = self._krok_po_restarcie(dziennik.get("krok", "gotowa"))
         self._koniec_splywu: float | None = None
         self._zadanie: asyncio.Task | None = None
+
+    def _krok_po_restarcie(self, krok: str) -> str:
+        """Zadanie zginęło razem z procesem, więc kroku w toku nie da się po prostu wznowić."""
+        if krok in KROKI_RUCHU:
+            # Wyniku makra nie znamy: cykl przerwany, brudny stół wymusi czyszczenie.
+            return "kalibracja"
+        if krok == "splyw":
+            return "wsyp"        # bez ruchu: robotnik potwierdza jeszcze raz
+        if krok in ("zdjecie", "blad_zdjecia"):
+            if any(w.pomiar.get("id_pomiaru") == self.id_pomiaru for w in self.kolejka.oczekujace()) \
+                    or self.magazyn.wynik(self.id_pomiaru):
+                return "analiza"
+            self.komunikat = self.komunikat or "Zdjęcie zostało przerwane."
+            return "blad_zdjecia"
+        if krok == "blad":
+            self.komunikat = self.komunikat or KOMUNIKAT_PRZERWANIA
+        return krok
+
+    @property
+    def krok(self) -> str:
+        return self._krok
+
+    @krok.setter
+    def krok(self, krok: str) -> None:
+        self._krok = krok
+        self.magazyn.zapisz_cykl({"krok": krok, "numer_probki": self.numer_probki,
+                                  "id_pomiaru": self.id_pomiaru, "komunikat": self.komunikat})
 
     @property
     def trwa(self) -> bool:
@@ -73,9 +103,16 @@ class Cykl:
         # Po błędzie makra blokada ma pierwszeństwo: nieudana kalibracja też zostawia skalibrowany=0.
         if self.krok == "blad" and (stan.zajety or stan.skalibrowany):
             return "blad"
+        # Zajęta, choć stacja nic nie zleciła: restart stacji w trakcie makra albo stara blokada.
+        # Działającego makra nie wolno „odblokować”, bo ODBLOKUJ skasowałoby kalibrację.
+        if stan.zajety:
+            return "oczekiwanie" if stan.w_toku else "blad"
         # Kalibracja wynika ze stanu maszyny, nie z pamięci aplikacji: restart Klippera kasuje
         # skalibrowany, więc tej ścieżki nie da się ominąć.
         if not stan.skalibrowany:
+            return "kalibracja"
+        # Wsypanie ma sens tylko na wysokości załadunku; inaczej stół jest w nieznanej pozycji.
+        if self.krok == "wsyp" and not stan.przygotowany:
             return "kalibracja"
         # Licznik leży na dysku, więc blokada wraca też po restarcie stacji.
         if self.krok == "gotowa" and self._trzeba_oproznic():
@@ -91,16 +128,17 @@ class Cykl:
 
     def opis(self) -> dict:
         self._odbierz_wynik()
+        ekran = self._ekran()
         pozostalo = None
         if self._koniec_splywu is not None:
             pozostalo = max(0, round((self._koniec_splywu - time.monotonic()) / self.tempo))
         return {
-            "ekran": self._ekran(),
+            "ekran": ekran,
             "trwa": self.trwa,
             "numer_probki": self.numer_probki,
             "nastepny_numer": self.magazyn.nastepny_numer(),
             "pozostalo_s": pozostalo,
-            "komunikat": self.komunikat,
+            "komunikat": self.komunikat or (KOMUNIKAT_PRZERWANIA if ekran == "blad" else None),
             "wynik": self.magazyn.wynik(self.id_pomiaru) if self.krok == "wynik" else None,
             "serwer_dostepny": self.wysylka.serwer_dostepny,
             "w_kolejce": len(self.kolejka.oczekujace()),
@@ -145,8 +183,8 @@ class Cykl:
 
     def _wznow(self) -> None:
         self._wymagaj("zatrzymana")
-        self.krok = "kalibracja"
         self.komunikat = None
+        self.krok = "kalibracja"
         self._uruchom(self._restartuj())
 
     async def _restartuj(self) -> None:
@@ -157,9 +195,9 @@ class Cykl:
 
     def _przerwano(self, blad: Exception) -> None:
         log.error("Cykl przerwany na kroku %s: %s", self.krok, blad)
-        self.krok = "blad"
         self.komunikat = tekst_bledu(str(blad))
         self._koniec_splywu = None
+        self.krok = "blad"
 
     def _odblokuj(self) -> None:
         self._wymagaj("blad")
@@ -171,8 +209,8 @@ class Cykl:
         except (BladMakra, BrakPolaczenia) as exc:
             self._przerwano(exc)
             return
-        self.krok = "kalibracja"
         self.komunikat = None
+        self.krok = "kalibracja"
 
     def _wymagaj(self, ekran: str) -> None:
         if self._ekran() != ekran:
@@ -206,9 +244,9 @@ class Cykl:
         self._uruchom(self._czysc())
 
     async def _czysc(self) -> None:
-        self.krok = "czyszczenie"
         self.numer_probki = None
         self.id_pomiaru = None
+        self.krok = "czyszczenie"
         try:
             # Wąska szczelina jawnie: przy szczelinie pomiarowej drobne kamyki zostałyby na płycie.
             await self.maszyna.wywolaj(f"PRZYGOTUJ SZCZELINA={SZCZELINA_CZYSZCZENIA}")
@@ -267,8 +305,8 @@ class Cykl:
         await self._zrob_zdjecie()
 
     async def _zrob_zdjecie(self) -> None:
-        self.krok = "zdjecie"
         self.komunikat = None
+        self.krok = "zdjecie"
         try:
             zdjecie = await self.kamera.zrob(self.numer_probki)
             self.kolejka.dodaj(zdjecie, {
@@ -278,8 +316,8 @@ class Cykl:
                 "czas_zdjecia": datetime.now(timezone.utc).isoformat(),
             })
         except BladZdjecia as exc:
-            self.krok = "blad_zdjecia"
             self.komunikat = str(exc)
+            self.krok = "blad_zdjecia"
             return
         self.krok = "analiza"
         self.wysylka.obudz()

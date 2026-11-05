@@ -49,6 +49,15 @@ class Magazyn:
         self.zapisz()
         return numer
 
+    # ------------------------------------------------------------- dziennik cyklu
+    def cykl(self) -> dict:
+        return self._dane.get("cykl", {})
+
+    def zapisz_cykl(self, dziennik: dict) -> None:
+        if self._dane.get("cykl") != dziennik:
+            self._dane["cykl"] = dziennik
+            self.zapisz()
+
     # ------------------------------------------------------------- stół i pudełko
     def brudny(self) -> bool:
         return self._dane.get("brudny", False)

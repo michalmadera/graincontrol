@@ -37,7 +37,8 @@ class SymulatorMaszyny:
     # ---------------------------------------------------------- interfejs Maszyna
     def stan(self) -> StanMaszyny:
         return StanMaszyny(self._polaczona, self._webhooks, self._komunikat, self._zajety,
-                           self._skalibrowany, self._przygotowany, self._stol, self._spychacz)
+                           self._skalibrowany, self._przygotowany, self._przerwanie is not None,
+                           self._stol, self._spychacz)
 
     async def wywolaj(self, makro: str) -> None:
         sprawdz_makro(makro)

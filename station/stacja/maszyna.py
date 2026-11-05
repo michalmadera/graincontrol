@@ -40,6 +40,7 @@ class StanMaszyny:
     zajety: bool
     skalibrowany: bool
     przygotowany: bool
+    w_toku: bool = False        # makro faktycznie się wykonuje (odróżnia pracę od blokady po błędzie)
     stol: float | None = None
     spychacz: float | None = None
 

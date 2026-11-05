@@ -151,6 +151,10 @@ function Uruchamianie() {
   return <Tresc tytul="Maszyna się uruchamia" opis="Poczekaj chwilę." />
 }
 
+function Oczekiwanie() {
+  return <Tresc tytul="Maszyna kończy poprzedni ruch" opis="Poczekaj. Nie wkładaj rąk do maszyny." />
+}
+
 function Blad({ stan, wyslij }) {
   return (
     <Tresc tytul="Wystąpił błąd" opis={stan.komunikat}>
@@ -176,4 +180,5 @@ export const EKRANY = {
   zatrzymana: Zatrzymana,
   uruchamianie: Uruchamianie,
   blad: Blad,
+  oczekiwanie: Oczekiwanie,
 }
