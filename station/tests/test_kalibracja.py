@@ -2,21 +2,9 @@ import asyncio
 
 import pytest
 
-from stacja.cykl import Cykl
+from pomoc import nowy_cykl, poczekaj_na
 from stacja.maszyna import BladMakra, MakroNiedozwolone, sprawdz_makro
 from stacja.symulator import SymulatorMaszyny
-
-
-def nowy_cykl():
-    maszyna = SymulatorMaszyny(tempo=0.001)
-    return Cykl(maszyna), maszyna
-
-
-async def poczekaj_na(cykl, ekran, limit=2.0):
-    async def petla():
-        while cykl.opis()["ekran"] != ekran or cykl.opis()["trwa"]:
-            await asyncio.sleep(0.002)
-    await asyncio.wait_for(petla(), limit)
 
 
 async def test_swiezy_start_wymaga_kalibracji():

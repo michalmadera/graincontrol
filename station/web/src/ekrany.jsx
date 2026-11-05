@@ -12,8 +12,37 @@ function Kalibracja({ stan, wyslij }) {
   )
 }
 
-function Gotowa() {
-  return <Tresc tytul="Maszyna gotowa" />
+function Gotowa({ stan, wyslij }) {
+  return (
+    <Tresc tytul="Maszyna gotowa" opis={`Następna próbka: nr ${stan.nastepny_numer}`}>
+      <button className="glowny" onClick={() => wyslij('nowy_pomiar')}>NOWY POMIAR</button>
+    </Tresc>
+  )
+}
+
+function Przygotowanie() {
+  return <Tresc tytul="Maszyna się przygotowuje" opis="Poczekaj, aż ekran poprosi o wsypanie próbki." />
+}
+
+function Wsyp({ wyslij }) {
+  return (
+    <Tresc tytul="Wsyp próbkę do lejka" opis="Gdy skończysz, naciśnij przycisk poniżej.">
+      <button className="glowny" onClick={() => wyslij('probka_wsypana')}>PRÓBKA WSYPANA</button>
+      <button className="drugorzedny" onClick={() => wyslij('anuluj')}>Anuluj</button>
+    </Tresc>
+  )
+}
+
+function Splyw({ stan }) {
+  return <Tresc tytul="Kamyki spływają" opis={`Pozostało ${stan.pozostalo_s ?? 0} s`} />
+}
+
+function Rozgarnianie() {
+  return <Tresc tytul="Maszyna rozgarnia próbkę" opis="Nie wkładaj rąk do maszyny." />
+}
+
+function Zdjecie() {
+  return <Tresc tytul="Robię zdjęcie" />
 }
 
 function BrakPolaczenia() {
@@ -24,4 +53,9 @@ export const EKRANY = {
   brak_polaczenia: BrakPolaczenia,
   kalibracja: Kalibracja,
   gotowa: Gotowa,
+  przygotowanie: Przygotowanie,
+  wsyp: Wsyp,
+  splyw: Splyw,
+  rozgarnianie: Rozgarnianie,
+  zdjecie: Zdjecie,
 }

@@ -1,6 +1,7 @@
 """Backend ekranu stacji: stan dla UI, akcje robotnika, sterowanie atrapą w testach."""
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 
 from .config import Konfiguracja, wczytaj
 from .cykl import Cykl
+from .magazyn import Magazyn
 from .symulator import SymulatorMaszyny
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -20,14 +22,21 @@ class Blad(BaseModel):
     tresc: str
 
 
+def zbuduj(app: FastAPI, konfiguracja: Konfiguracja) -> None:
+    if not konfiguracja.symulator:
+        raise RuntimeError(f"Nieznana maszyna: {konfiguracja.maszyna}")
+    app.state.maszyna = SymulatorMaszyny(konfiguracja.tempo)
+    app.state.cykl = Cykl(app.state.maszyna, Magazyn(konfiguracja.dane), konfiguracja.tempo)
+
+
 def router_dev(app: FastAPI, konfiguracja: Konfiguracja) -> APIRouter:
     """Sterowanie symulatorem. Montowane wyłącznie przy symulatorze, nigdy przy maszynie."""
     dev = APIRouter(prefix="/api/dev")
 
     @dev.post("/reset")
     def reset() -> dict:
-        app.state.maszyna = SymulatorMaszyny(konfiguracja.tempo)
-        app.state.cykl = Cykl(app.state.maszyna)
+        shutil.rmtree(konfiguracja.dane, ignore_errors=True)
+        zbuduj(app, konfiguracja)
         return {"ok": True}
 
     @dev.post("/rozlacz")
@@ -50,6 +59,11 @@ def router_dev(app: FastAPI, konfiguracja: Konfiguracja) -> APIRouter:
         app.state.maszyna.wymus_blad(cialo.makro, cialo.tresc)
         return {"ok": True}
 
+    @dev.post("/ustawienia")
+    def ustawienia(zmiany: dict) -> dict:
+        app.state.cykl.magazyn.zmien_ustawienia(zmiany)
+        return app.state.cykl.magazyn.ustawienia
+
     @dev.get("/historia")
     def historia() -> list[str]:
         return app.state.maszyna.historia
@@ -60,12 +74,9 @@ def router_dev(app: FastAPI, konfiguracja: Konfiguracja) -> APIRouter:
 def create_app(konfiguracja: Konfiguracja | None = None) -> FastAPI:
     konfiguracja = konfiguracja or wczytaj()
     app = FastAPI(title="GrainControl — stacja")
+    zbuduj(app, konfiguracja)
     if konfiguracja.symulator:
-        app.state.maszyna = SymulatorMaszyny(konfiguracja.tempo)
         app.include_router(router_dev(app, konfiguracja))
-    else:
-        raise RuntimeError(f"Nieznana maszyna: {konfiguracja.maszyna}")
-    app.state.cykl = Cykl(app.state.maszyna)
 
     @app.get("/api/stan")
     def stan() -> dict:

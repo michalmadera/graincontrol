@@ -25,3 +25,11 @@ button { font: inherit; cursor: pointer; }
   color: #06210f; background: var(--good); border: none; border-radius: 16px; }
 .glowny:active { filter: brightness(.85); }
 .blad { margin: 16px 0 0; font-size: 24px; color: #ff9c92; }
+.numer { font-weight: 700; }
+.kroki { list-style: none; display: flex; gap: 8px; margin: 0; padding: 12px 24px 0; }
+.kroki li { flex: 1; text-align: center; font-size: 20px; padding: 12px 4px; border-radius: 8px;
+  background: var(--panel2); color: var(--dim); }
+.kroki li.teraz { background: var(--accent); color: #fff; font-weight: 700; }
+.kroki li.zrobione { background: #173a26; color: var(--good); }
+.drugorzedny { min-width: 240px; min-height: 72px; font-size: 26px; color: var(--fg);
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; }

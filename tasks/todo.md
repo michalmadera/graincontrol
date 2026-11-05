@@ -4,7 +4,7 @@ Plan: `tasks/plan.md`. Każde zadanie: pytest + Playwright na atrapach, commit l
 
 ## Faza 1: przebieg na maszynie
 - [x] T1 Szkielet i obowiązkowa kalibracja
-- [ ] T2 Cykl do rozgarnięcia i numeracja
+- [x] T2 Cykl do rozgarnięcia i numeracja
 - [ ] T3 Zdjęcie
 - [ ] Punkt kontrolny A
 
