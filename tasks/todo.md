@@ -3,7 +3,7 @@
 Plan: `tasks/plan.md`. Każde zadanie: pytest + Playwright na atrapach, commit lokalny, bez pusha.
 
 ## Faza 1: przebieg na maszynie
-- [ ] T1 Szkielet i obowiązkowa kalibracja
+- [x] T1 Szkielet i obowiązkowa kalibracja
 - [ ] T2 Cykl do rozgarnięcia i numeracja
 - [ ] T3 Zdjęcie
 - [ ] Punkt kontrolny A

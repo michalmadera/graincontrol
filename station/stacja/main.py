@@ -1,0 +1,92 @@
+"""Backend ekranu stacji: stan dla UI, akcje robotnika, sterowanie atrapą w testach."""
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from .config import Konfiguracja, wczytaj
+from .cykl import Cykl
+from .symulator import SymulatorMaszyny
+
+STATIC = Path(__file__).resolve().parent / "static"
+
+
+class Blad(BaseModel):
+    makro: str
+    tresc: str
+
+
+def router_dev(app: FastAPI, konfiguracja: Konfiguracja) -> APIRouter:
+    """Sterowanie symulatorem. Montowane wyłącznie przy symulatorze, nigdy przy maszynie."""
+    dev = APIRouter(prefix="/api/dev")
+
+    @dev.post("/reset")
+    def reset() -> dict:
+        app.state.maszyna = SymulatorMaszyny(konfiguracja.tempo)
+        app.state.cykl = Cykl(app.state.maszyna)
+        return {"ok": True}
+
+    @dev.post("/rozlacz")
+    def rozlacz() -> dict:
+        app.state.maszyna.rozlacz()
+        return {"ok": True}
+
+    @dev.post("/polacz")
+    def polacz() -> dict:
+        app.state.maszyna.polacz()
+        return {"ok": True}
+
+    @dev.post("/restart")
+    async def restart() -> dict:
+        await app.state.maszyna.firmware_restart()
+        return {"ok": True}
+
+    @dev.post("/blad")
+    def blad(cialo: Blad) -> dict:
+        app.state.maszyna.wymus_blad(cialo.makro, cialo.tresc)
+        return {"ok": True}
+
+    @dev.get("/historia")
+    def historia() -> list[str]:
+        return app.state.maszyna.historia
+
+    return dev
+
+
+def create_app(konfiguracja: Konfiguracja | None = None) -> FastAPI:
+    konfiguracja = konfiguracja or wczytaj()
+    app = FastAPI(title="GrainControl — stacja")
+    if konfiguracja.symulator:
+        app.state.maszyna = SymulatorMaszyny(konfiguracja.tempo)
+        app.include_router(router_dev(app, konfiguracja))
+    else:
+        raise RuntimeError(f"Nieznana maszyna: {konfiguracja.maszyna}")
+    app.state.cykl = Cykl(app.state.maszyna)
+
+    @app.get("/api/stan")
+    def stan() -> dict:
+        return app.state.cykl.opis()
+
+    @app.post("/api/akcja/{nazwa}")
+    async def akcja(nazwa: str) -> dict:
+        try:
+            app.state.cykl.akcja(nazwa)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+        return app.state.cykl.opis()
+
+    if STATIC.exists():
+        app.mount("/assets", StaticFiles(directory=STATIC / "assets"), name="assets")
+
+        @app.get("/")
+        def index() -> FileResponse:
+            return FileResponse(STATIC / "index.html")
+
+    return app
+
+
+app = create_app()
