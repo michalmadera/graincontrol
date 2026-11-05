@@ -16,7 +16,7 @@ Plan: `tasks/plan.md`. Każde zadanie: pytest + Playwright na atrapach, commit l
 
 ## Faza 3: bezpieczeństwo i odporność
 - [x] T7 Czyszczenie, pudełko, brudny stół
-- [ ] T8 STOP i błędy makr
+- [x] T8 STOP i błędy makr
 - [ ] T9 Odtwarzanie po restarcie backendu
 - [ ] Punkt kontrolny C
 

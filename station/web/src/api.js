@@ -17,3 +17,9 @@ export async function akcja(nazwa, cialo) {
   }
   return odp.json()
 }
+
+export async function stop() {
+  const odp = await fetch('/api/stop', { method: 'POST' })
+  if (!odp.ok) throw new Error('Nie udało się zatrzymać maszyny')
+  return odp.json()
+}

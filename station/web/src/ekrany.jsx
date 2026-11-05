@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef, useState } from 'react'
 import { Tresc } from './App.jsx'
 
 function Kalibracja({ stan, wyslij }) {
@@ -118,6 +118,47 @@ function Oproznij({ wyslij }) {
   )
 }
 
+const CZAS_PRZYTRZYMANIA_MS = 3000
+
+// Przytrzymanie, a nie dotknięcie: wznowienie ma być świadomą decyzją człowieka przy maszynie.
+function PrzyciskPrzytrzymaj({ onGotowe, children }) {
+  const licznik = useRef(null)
+  const [trzyma, setTrzyma] = useState(false)
+  const pusc = () => { clearTimeout(licznik.current); setTrzyma(false) }
+  const nacisnij = () => {
+    setTrzyma(true)
+    licznik.current = setTimeout(() => { setTrzyma(false); onGotowe() }, CZAS_PRZYTRZYMANIA_MS)
+  }
+  return (
+    <button className={trzyma ? 'glowny przytrzymaj trzyma' : 'glowny przytrzymaj'}
+            onPointerDown={nacisnij} onPointerUp={pusc} onPointerLeave={pusc} onPointerCancel={pusc}
+            onContextMenu={(e) => e.preventDefault()}>
+      <span className="postep" />
+      <span className="napis">{children}</span>
+    </button>
+  )
+}
+
+function Zatrzymana({ wyslij }) {
+  return (
+    <Tresc tytul="Maszyna zatrzymana" opis="Sprawdź, czy nic jej nie blokuje i czy nikt nie ma rąk w środku.">
+      <PrzyciskPrzytrzymaj onGotowe={() => wyslij('wznow')}>PRZYTRZYMAJ, ABY WZNOWIĆ</PrzyciskPrzytrzymaj>
+    </Tresc>
+  )
+}
+
+function Uruchamianie() {
+  return <Tresc tytul="Maszyna się uruchamia" opis="Poczekaj chwilę." />
+}
+
+function Blad({ stan, wyslij }) {
+  return (
+    <Tresc tytul="Wystąpił błąd" opis={stan.komunikat}>
+      <button className="glowny" onClick={() => wyslij('odblokuj')}>ODBLOKUJ MASZYNĘ</button>
+    </Tresc>
+  )
+}
+
 export const EKRANY = {
   brak_polaczenia: BrakPolaczenia,
   kalibracja: Kalibracja,
@@ -132,4 +173,7 @@ export const EKRANY = {
   wynik: Wynik,
   czyszczenie: Czyszczenie,
   oproznij: Oproznij,
+  zatrzymana: Zatrzymana,
+  uruchamianie: Uruchamianie,
+  blad: Blad,
 }

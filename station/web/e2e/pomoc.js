@@ -32,5 +32,5 @@ export async function sprawdzEkran(page) {
   }))
   expect(wymiary.w).toBeLessThanOrEqual(1280)
   expect(wymiary.h).toBeLessThanOrEqual(800)
-  await expect(page.locator('body')).not.toContainText(/KALIBRUJ|PRZYGOTUJ|POMIAR|ODBLOKUJ/)
+  await expect(page.locator('body')).not.toContainText(/KALIBRUJ|PRZYGOTUJ|POMIAR\b|ODBLOKUJ\b(?! MASZYN)/)
 }

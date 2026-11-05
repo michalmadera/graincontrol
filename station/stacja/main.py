@@ -109,6 +109,11 @@ def create_app(konfiguracja: Konfiguracja | None = None) -> FastAPI:
     def stan() -> dict:
         return app.state.cykl.opis()
 
+    @app.post("/api/stop")
+    async def stop() -> dict:
+        wynik = await app.state.cykl.stop()
+        return {**app.state.cykl.opis(), "wynik_stop": wynik}
+
     @app.post("/api/akcja/{nazwa}")
     async def akcja(nazwa: str) -> dict:
         try:

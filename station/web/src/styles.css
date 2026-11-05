@@ -43,3 +43,10 @@ button { font: inherit; cursor: pointer; }
   background: var(--warn); border-radius: 12px; }
 .ostatnie { list-style: none; margin: 0; padding: 0; font-size: 22px; color: var(--dim); text-align: center; }
 .ostatnie li { padding: 2px 0; }
+.stop { margin-left: auto; min-width: 150px; min-height: 56px; font-size: 26px; font-weight: 900; color: #fff;
+  background: var(--bad); border: none; border-radius: 10px; }
+.stop:active { filter: brightness(.8); }
+.przytrzymaj { position: relative; overflow: hidden; touch-action: none; }
+.przytrzymaj .napis { position: relative; }
+.przytrzymaj .postep { position: absolute; inset: 0; width: 0; background: rgba(0, 0, 0, .3); }
+.przytrzymaj.trzyma .postep { width: 100%; transition: width 3s linear; }

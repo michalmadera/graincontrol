@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
 from datetime import datetime, timezone
@@ -13,7 +14,28 @@ from .maszyna import BladMakra, BrakPolaczenia, Maszyna
 from .wysylka import Wysylka
 
 
+log = logging.getLogger(__name__)
+
 SZCZELINA_CZYSZCZENIA = 0.5
+
+
+_BLEDY = [
+    ("INTERLOCK", "Zabezpieczenie zatrzymało ruch maszyny."),
+    ("poza zakresem", "Zabezpieczenie zatrzymało ruch maszyny."),
+    ("system zajety", "Maszyna jest zablokowana po poprzednim błędzie."),
+    ("nieskalibrowane", "Maszyna wymaga ponownego ustawienia."),
+    ("najpierw PRZYGOTUJ", "Maszyna nie była przygotowana na próbkę."),
+    ("SZCZELINA", "Złe ustawienie szczeliny. Wezwij serwis."),
+    ("Utracono", "Utracono połączenie z maszyną."),
+]
+
+
+def tekst_bledu(tresc: str) -> str:
+    """Robotnik dostaje zdanie po polsku. Oryginał z Klippera (z nazwami makr) idzie do logu."""
+    for fragment, tekst in _BLEDY:
+        if fragment in tresc:
+            return tekst
+    return "Maszyna zgłosiła błąd. Jeśli się powtórzy, wezwij serwis."
 
 
 class Cykl:
@@ -38,10 +60,19 @@ class Cykl:
 
     def _ekran(self) -> str:
         stan = self.maszyna.stan()
-        if not stan.polaczona or stan.webhooks != "ready":
+        if not stan.polaczona:
+            return "brak_polaczenia"
+        if stan.webhooks == "shutdown":
+            return "zatrzymana"
+        if stan.webhooks == "startup":
+            return "uruchamianie"
+        if stan.webhooks != "ready":
             return "brak_polaczenia"
         if self.trwa:
             return self.krok
+        # Po błędzie makra blokada ma pierwszeństwo: nieudana kalibracja też zostawia skalibrowany=0.
+        if self.krok == "blad" and (stan.zajety or stan.skalibrowany):
+            return "blad"
         # Kalibracja wynika ze stanu maszyny, nie z pamięci aplikacji: restart Klippera kasuje
         # skalibrowany, więc tej ścieżki nie da się ominąć.
         if not stan.skalibrowany:
@@ -87,6 +118,8 @@ class Cykl:
             "dalej": self._dalej,
             "dalej_bez_wyniku": self._dalej_bez_wyniku,
             "oproznione": self._oproznione,
+            "wznow": self._wznow,
+            "odblokuj": self._odblokuj,
         }.get(nazwa)
         if obsluga is None:
             raise ValueError(f"Nieznana akcja: {nazwa}")
@@ -94,6 +127,52 @@ class Cykl:
             raise ValueError("Maszyna pracuje")
         self._odbierz_wynik()
         obsluga()
+
+    # ------------------------------------------------------------- STOP i błędy
+    async def stop(self) -> str:
+        """Najpierw silniki, potem sterowanie: żaden kolejny krok cyklu nie może już ruszyć."""
+        wynik = "ok"
+        try:
+            await self.maszyna.emergency_stop()
+        except (BladMakra, BrakPolaczenia, OSError) as exc:
+            log.error("STOP nie dotarł do maszyny: %s", exc)
+            wynik = "brak_polaczenia"
+        if self.trwa:
+            self._zadanie.cancel()
+            await asyncio.gather(self._zadanie, return_exceptions=True)
+        self._koniec_splywu = None
+        return wynik
+
+    def _wznow(self) -> None:
+        self._wymagaj("zatrzymana")
+        self.krok = "kalibracja"
+        self.komunikat = None
+        self._uruchom(self._restartuj())
+
+    async def _restartuj(self) -> None:
+        try:
+            await self.maszyna.firmware_restart()
+        except (BladMakra, BrakPolaczenia, OSError) as exc:
+            log.error("Restart maszyny nie powiódł się: %s", exc)
+
+    def _przerwano(self, blad: Exception) -> None:
+        log.error("Cykl przerwany na kroku %s: %s", self.krok, blad)
+        self.krok = "blad"
+        self.komunikat = tekst_bledu(str(blad))
+        self._koniec_splywu = None
+
+    def _odblokuj(self) -> None:
+        self._wymagaj("blad")
+        self._uruchom(self._po_odblokowaniu())
+
+    async def _po_odblokowaniu(self) -> None:
+        try:
+            await self.maszyna.wywolaj("ODBLOKUJ")
+        except (BladMakra, BrakPolaczenia) as exc:
+            self._przerwano(exc)
+            return
+        self.krok = "kalibracja"
+        self.komunikat = None
 
     def _wymagaj(self, ekran: str) -> None:
         if self._ekran() != ekran:
@@ -111,7 +190,8 @@ class Cykl:
     async def _po_kalibracji(self) -> None:
         try:
             await self.maszyna.wywolaj("KALIBRUJ")
-        except (BladMakra, BrakPolaczenia):
+        except (BladMakra, BrakPolaczenia) as exc:
+            self._przerwano(exc)
             return
         if self.magazyn.brudny():
             await self._czysc()
@@ -127,11 +207,14 @@ class Cykl:
 
     async def _czysc(self) -> None:
         self.krok = "czyszczenie"
+        self.numer_probki = None
+        self.id_pomiaru = None
         try:
             # Wąska szczelina jawnie: przy szczelinie pomiarowej drobne kamyki zostałyby na płycie.
             await self.maszyna.wywolaj(f"PRZYGOTUJ SZCZELINA={SZCZELINA_CZYSZCZENIA}")
             await self.maszyna.wywolaj("POMIAR")
-        except (BladMakra, BrakPolaczenia):
+        except (BladMakra, BrakPolaczenia) as exc:
+            self._przerwano(exc)
             return
         self.magazyn.po_czyszczeniu()
         self.krok = "gotowa"
@@ -160,7 +243,8 @@ class Cykl:
         makro = "PRZYGOTUJ" if szczelina is None else f"PRZYGOTUJ SZCZELINA={szczelina}"
         try:
             await self.maszyna.wywolaj(makro)
-        except (BladMakra, BrakPolaczenia):
+        except (BladMakra, BrakPolaczenia) as exc:
+            self._przerwano(exc)
             return
         self.krok = "wsyp"
 
@@ -177,7 +261,8 @@ class Cykl:
         self.krok = "rozgarnianie"
         try:
             await self.maszyna.wywolaj("POMIAR")
-        except (BladMakra, BrakPolaczenia):
+        except (BladMakra, BrakPolaczenia) as exc:
+            self._przerwano(exc)
             return
         await self._zrob_zdjecie()
 
