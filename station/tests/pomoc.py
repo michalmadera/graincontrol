@@ -3,6 +3,8 @@ import tempfile
 from pathlib import Path
 
 from stacja.cykl import Cykl
+from stacja.kamera import Kamera
+from stacja.kolejka import Kolejka
 from stacja.magazyn import Magazyn
 from stacja.symulator import SymulatorMaszyny
 
@@ -15,7 +17,8 @@ def nowy_cykl(katalog=None, **ustawienia):
     magazyn = Magazyn(katalog)
     if ustawienia:
         magazyn.zmien_ustawienia(ustawienia)
-    return Cykl(maszyna, magazyn, tempo=TEMPO), maszyna
+    cykl = Cykl(maszyna, magazyn, Kamera(katalog), Kolejka(katalog), tempo=TEMPO)
+    return cykl, maszyna
 
 
 async def poczekaj_na(cykl, ekran, limit=3.0):

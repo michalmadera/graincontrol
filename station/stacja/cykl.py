@@ -3,18 +3,27 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
+from datetime import datetime, timezone
 
+from .kamera import BladZdjecia, Kamera
+from .kolejka import Kolejka
 from .magazyn import Magazyn
 from .maszyna import BladMakra, BrakPolaczenia, Maszyna
 
 
 class Cykl:
-    def __init__(self, maszyna: Maszyna, magazyn: Magazyn, tempo: float = 1.0) -> None:
+    def __init__(self, maszyna: Maszyna, magazyn: Magazyn, kamera: Kamera, kolejka: Kolejka,
+                 tempo: float = 1.0) -> None:
         self.maszyna = maszyna
         self.magazyn = magazyn
+        self.kamera = kamera
+        self.kolejka = kolejka
         self.tempo = tempo
         self.krok = "gotowa"
         self.numer_probki: int | None = None
+        self.id_pomiaru: str | None = None
+        self.komunikat: str | None = None
         self._koniec_splywu: float | None = None
         self._zadanie: asyncio.Task | None = None
 
@@ -44,6 +53,7 @@ class Cykl:
             "numer_probki": self.numer_probki,
             "nastepny_numer": self.magazyn.nastepny_numer(),
             "pozostalo_s": pozostalo,
+            "komunikat": self.komunikat,
         }
 
     def akcja(self, nazwa: str) -> None:
@@ -52,6 +62,7 @@ class Cykl:
             "nowy_pomiar": self._nowy_pomiar,
             "probka_wsypana": self._probka_wsypana,
             "anuluj": self._anuluj,
+            "ponow_zdjecie": self._ponow_zdjecie,
         }.get(nazwa)
         if obsluga is None:
             raise ValueError(f"Nieznana akcja: {nazwa}")
@@ -83,6 +94,7 @@ class Cykl:
     def _nowy_pomiar(self) -> None:
         self._wymagaj("gotowa")
         self.numer_probki = self.magazyn.pobierz_numer()
+        self.id_pomiaru = str(uuid.uuid4())
         self.krok = "przygotowanie"
         self._uruchom(self._przygotuj())
 
@@ -110,10 +122,33 @@ class Cykl:
             await self.maszyna.wywolaj("POMIAR")
         except (BladMakra, BrakPolaczenia):
             return
+        await self._zrob_zdjecie()
+
+    async def _zrob_zdjecie(self) -> None:
         self.krok = "zdjecie"
+        self.komunikat = None
+        try:
+            zdjecie = await self.kamera.zrob(self.numer_probki)
+            self.kolejka.dodaj(zdjecie, {
+                "id_pomiaru": self.id_pomiaru,
+                "numer_probki": self.numer_probki,
+                "id_stacji": self.magazyn.ustawienia["id_stacji"],
+                "czas_zdjecia": datetime.now(timezone.utc).isoformat(),
+            })
+        except BladZdjecia as exc:
+            self.krok = "blad_zdjecia"
+            self.komunikat = str(exc)
+            return
+        self.krok = "analiza"
+
+    def _ponow_zdjecie(self) -> None:
+        self._wymagaj("blad_zdjecia")
+        self.krok = "zdjecie"
+        self._uruchom(self._zrob_zdjecie())
 
     def _anuluj(self) -> None:
         self._wymagaj("wsyp")
         self.numer_probki = None
+        self.id_pomiaru = None
         # Robotnik nacisnął „Anuluj”, a nie kalibrację: maszyna rusza dopiero po drugim przycisku.
         self.krok = "kalibracja"

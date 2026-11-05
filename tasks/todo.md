@@ -5,8 +5,8 @@ Plan: `tasks/plan.md`. Każde zadanie: pytest + Playwright na atrapach, commit l
 ## Faza 1: przebieg na maszynie
 - [x] T1 Szkielet i obowiązkowa kalibracja
 - [x] T2 Cykl do rozgarnięcia i numeracja
-- [ ] T3 Zdjęcie
-- [ ] Punkt kontrolny A
+- [x] T3 Zdjęcie
+- [x] Punkt kontrolny A
 
 ## Faza 2: serwer i wynik
 - [ ] T4 Serwis z atrapą i Docker `mock`

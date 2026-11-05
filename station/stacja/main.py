@@ -11,6 +11,8 @@ from pydantic import BaseModel
 
 from .config import Konfiguracja, wczytaj
 from .cykl import Cykl
+from .kamera import Kamera
+from .kolejka import Kolejka
 from .magazyn import Magazyn
 from .symulator import SymulatorMaszyny
 
@@ -26,7 +28,9 @@ def zbuduj(app: FastAPI, konfiguracja: Konfiguracja) -> None:
     if not konfiguracja.symulator:
         raise RuntimeError(f"Nieznana maszyna: {konfiguracja.maszyna}")
     app.state.maszyna = SymulatorMaszyny(konfiguracja.tempo)
-    app.state.cykl = Cykl(app.state.maszyna, Magazyn(konfiguracja.dane), konfiguracja.tempo)
+    dane = konfiguracja.dane
+    app.state.cykl = Cykl(app.state.maszyna, Magazyn(dane), Kamera(dane), Kolejka(dane),
+                          konfiguracja.tempo)
 
 
 def router_dev(app: FastAPI, konfiguracja: Konfiguracja) -> APIRouter:
@@ -63,6 +67,11 @@ def router_dev(app: FastAPI, konfiguracja: Konfiguracja) -> APIRouter:
     def ustawienia(zmiany: dict) -> dict:
         app.state.cykl.magazyn.zmien_ustawienia(zmiany)
         return app.state.cykl.magazyn.ustawienia
+
+    @dev.post("/blad-zdjecia")
+    def blad_zdjecia(cialo: Blad) -> dict:
+        app.state.cykl.kamera.wymus_blad(cialo.tresc)
+        return {"ok": True}
 
     @dev.get("/historia")
     def historia() -> list[str]:

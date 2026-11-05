@@ -12,7 +12,7 @@ async def test_pelny_przebieg_do_rozgarniecia(tmp_path):
     assert maszyna.stan().przygotowany is True
     cykl.akcja("probka_wsypana")
     assert cykl.opis()["ekran"] == "splyw"
-    await poczekaj_na(cykl, "zdjecie")
+    await poczekaj_na(cykl, "analiza")
     assert maszyna.historia == ["KALIBRUJ", "PRZYGOTUJ", "POMIAR"]
 
 

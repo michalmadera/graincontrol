@@ -49,6 +49,18 @@ function BrakPolaczenia() {
   return <Tresc tytul="Brak połączenia z maszyną" opis="Trwa ponowne łączenie…" />
 }
 
+function BladZdjecia({ stan, wyslij }) {
+  return (
+    <Tresc tytul="Nie udało się zrobić zdjęcia" opis={stan.komunikat}>
+      <button className="glowny" onClick={() => wyslij('ponow_zdjecie')}>PONÓW ZDJĘCIE</button>
+    </Tresc>
+  )
+}
+
+function Analiza() {
+  return <Tresc tytul="Analizuję…" opis="Wynik pojawi się na ekranie. Poczekaj." />
+}
+
 export const EKRANY = {
   brak_polaczenia: BrakPolaczenia,
   kalibracja: Kalibracja,
@@ -58,4 +70,6 @@ export const EKRANY = {
   splyw: Splyw,
   rozgarnianie: Rozgarnianie,
   zdjecie: Zdjecie,
+  blad_zdjecia: BladZdjecia,
+  analiza: Analiza,
 }
