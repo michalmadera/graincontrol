@@ -88,6 +88,8 @@ async def test_pelna_kolejka_blokuje_nowy_pomiar_i_nic_nie_nadpisuje(tmp_path):
     cykl, _ = await do_analizy(tmp_path, serwis, limit_kolejki=1)
     await poczekaj(lambda: cykl.opis()["serwer_dostepny"] is False)
     cykl.akcja("dalej_bez_wyniku")
+    await poczekaj_na(cykl, "oproznij")
+    cykl.akcja("oproznione")
     await cykl.wysylka.stop()
     assert cykl.opis()["kolejka_pelna"] is True
     with pytest.raises(ValueError):

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { reset, przyciskGlowny, skalibruj, sprawdzEkran, SERWIS } from './pomoc.js'
+import { reset, przyciskGlowny, oproznijPudelko, skalibruj, sprawdzEkran, SERWIS } from './pomoc.js'
 
 test.beforeEach(async ({ request }) => {
   await reset(request)
@@ -20,6 +20,7 @@ test('wynik atrapy jest zawsze oznaczony jako TEST', async ({ page, request }) =
   await expect(page.getByText('TEST – wynik niemiarodajny')).toBeVisible()
   await sprawdzEkran(page)
   await przyciskGlowny(page, 'DALEJ')
+  await oproznijPudelko(page)
   await expect(page.getByText('Następna próbka: nr 2')).toBeVisible()
 })
 

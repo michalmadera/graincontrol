@@ -49,6 +49,26 @@ class Magazyn:
         self.zapisz()
         return numer
 
+    # ------------------------------------------------------------- stół i pudełko
+    def brudny(self) -> bool:
+        return self._dane.get("brudny", False)
+
+    def ustaw_brudny(self, brudny: bool) -> None:
+        self._dane["brudny"] = brudny
+        self.zapisz()
+
+    def czyszczen_od_oproznienia(self) -> int:
+        return self._dane.get("czyszczen", 0)
+
+    def po_czyszczeniu(self) -> None:
+        self._dane["brudny"] = False
+        self._dane["czyszczen"] = self.czyszczen_od_oproznienia() + 1
+        self.zapisz()
+
+    def po_oproznieniu(self) -> None:
+        self._dane["czyszczen"] = 0
+        self.zapisz()
+
     # ------------------------------------------------------------- wyniki
     def zapisz_wynik(self, wynik: dict) -> None:
         wyniki = self._dane.setdefault("wyniki", [])

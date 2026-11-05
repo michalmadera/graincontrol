@@ -20,6 +20,11 @@ export async function skalibruj(page) {
   await expect(page.getByRole('heading', { name: 'Maszyna gotowa' })).toBeVisible()
 }
 
+export async function oproznijPudelko(page) {
+  await expect(page.getByRole('heading', { name: 'Opróżnij pudełko na kamyki' })).toBeVisible()
+  await przyciskGlowny(page, 'OPRÓŻNIONE')
+}
+
 // Ekran robotnika nie może się przewijać ani zawierać nazw makr.
 export async function sprawdzEkran(page) {
   const wymiary = await page.evaluate(() => ({

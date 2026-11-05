@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { reset, przyciskGlowny, skalibruj, sprawdzEkran } from './pomoc.js'
+import { reset, przyciskGlowny, oproznijPudelko, skalibruj, sprawdzEkran } from './pomoc.js'
 
 test.beforeEach(async ({ request }) => {
   await reset(request)
@@ -30,5 +30,6 @@ test('anulowanie nie rusza maszyny, a numer nie wraca do obiegu', async ({ page,
   await expect(page.getByRole('heading', { name: 'Maszyna musi się ustawić' })).toBeVisible()
   expect(await (await request.get('/api/dev/historia')).json()).toEqual(['KALIBRUJ', 'PRZYGOTUJ'])
   await przyciskGlowny(page, 'USTAW MASZYNĘ')
+  await oproznijPudelko(page)
   await expect(page.getByText('Następna próbka: nr 2')).toBeVisible()
 })

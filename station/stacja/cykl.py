@@ -13,6 +13,9 @@ from .maszyna import BladMakra, BrakPolaczenia, Maszyna
 from .wysylka import Wysylka
 
 
+SZCZELINA_CZYSZCZENIA = 0.5
+
+
 class Cykl:
     def __init__(self, maszyna: Maszyna, magazyn: Magazyn, kamera: Kamera, kolejka: Kolejka,
                  wysylka: Wysylka, tempo: float = 1.0) -> None:
@@ -43,7 +46,13 @@ class Cykl:
         # skalibrowany, więc tej ścieżki nie da się ominąć.
         if not stan.skalibrowany:
             return "kalibracja"
+        # Licznik leży na dysku, więc blokada wraca też po restarcie stacji.
+        if self.krok == "gotowa" and self._trzeba_oproznic():
+            return "oproznij"
         return self.krok
+
+    def _trzeba_oproznic(self) -> bool:
+        return self.magazyn.czyszczen_od_oproznienia() >= self.magazyn.ustawienia["oproznianie_co_n"]
 
     def _odbierz_wynik(self) -> None:
         if self.krok == "analiza" and not self.trwa and self.magazyn.wynik(self.id_pomiaru):
@@ -77,6 +86,7 @@ class Cykl:
             "ponow_zdjecie": self._ponow_zdjecie,
             "dalej": self._dalej,
             "dalej_bez_wyniku": self._dalej_bez_wyniku,
+            "oproznione": self._oproznione,
         }.get(nazwa)
         if obsluga is None:
             raise ValueError(f"Nieznana akcja: {nazwa}")
@@ -103,7 +113,32 @@ class Cykl:
             await self.maszyna.wywolaj("KALIBRUJ")
         except (BladMakra, BrakPolaczenia):
             return
+        if self.magazyn.brudny():
+            await self._czysc()
+        else:
+            self.krok = "gotowa"
+
+    # ------------------------------------------------------------- czyszczenie
+    def _zacznij_czyszczenie(self) -> None:
+        self.numer_probki = None
+        self.id_pomiaru = None
+        self.krok = "czyszczenie"
+        self._uruchom(self._czysc())
+
+    async def _czysc(self) -> None:
+        self.krok = "czyszczenie"
+        try:
+            # Wąska szczelina jawnie: przy szczelinie pomiarowej drobne kamyki zostałyby na płycie.
+            await self.maszyna.wywolaj(f"PRZYGOTUJ SZCZELINA={SZCZELINA_CZYSZCZENIA}")
+            await self.maszyna.wywolaj("POMIAR")
+        except (BladMakra, BrakPolaczenia):
+            return
+        self.magazyn.po_czyszczeniu()
         self.krok = "gotowa"
+
+    def _oproznione(self) -> None:
+        self._wymagaj("oproznij")
+        self.magazyn.po_oproznieniu()
 
     # ------------------------------------------------------------- pomiar
     def _kolejka_pelna(self) -> bool:
@@ -115,6 +150,8 @@ class Cykl:
             raise ValueError("Kolejka pełna")
         self.numer_probki = self.magazyn.pobierz_numer()
         self.id_pomiaru = str(uuid.uuid4())
+        # Przed pierwszym ruchem: każde przerwanie od tej chwili wymusi czyszczenie.
+        self.magazyn.ustaw_brudny(True)
         self.krok = "przygotowanie"
         self._uruchom(self._przygotuj())
 
@@ -169,17 +206,13 @@ class Cykl:
 
     def _dalej(self) -> None:
         self._wymagaj("wynik")
-        self.numer_probki = None
-        self.id_pomiaru = None
-        self.krok = "gotowa"
+        self._zacznij_czyszczenie()
 
     def _dalej_bez_wyniku(self) -> None:
         self._wymagaj("analiza")
         if self.wysylka.serwer_dostepny:
             raise ValueError("Serwer działa, wynik zaraz będzie")
-        self.numer_probki = None
-        self.id_pomiaru = None
-        self.krok = "gotowa"
+        self._zacznij_czyszczenie()
 
     def _anuluj(self) -> None:
         self._wymagaj("wsyp")

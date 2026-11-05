@@ -106,6 +106,18 @@ function Wynik({ stan, wyslij }) {
   )
 }
 
+function Czyszczenie() {
+  return <Tresc tytul="Maszyna czyści stół" opis="Nie wkładaj rąk do maszyny." />
+}
+
+function Oproznij({ wyslij }) {
+  return (
+    <Tresc tytul="Opróżnij pudełko na kamyki" opis="Wyjmij pudełko spod stołu, opróżnij je i włóż z powrotem.">
+      <button className="glowny" onClick={() => wyslij('oproznione')}>OPRÓŻNIONE</button>
+    </Tresc>
+  )
+}
+
 export const EKRANY = {
   brak_polaczenia: BrakPolaczenia,
   kalibracja: Kalibracja,
@@ -118,4 +130,6 @@ export const EKRANY = {
   blad_zdjecia: BladZdjecia,
   analiza: Analiza,
   wynik: Wynik,
+  czyszczenie: Czyszczenie,
+  oproznij: Oproznij,
 }

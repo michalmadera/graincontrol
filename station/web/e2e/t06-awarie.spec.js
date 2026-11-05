@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { reset, przyciskGlowny, skalibruj, sprawdzEkran, SERWIS } from './pomoc.js'
+import { reset, przyciskGlowny, oproznijPudelko, skalibruj, sprawdzEkran, SERWIS } from './pomoc.js'
 
 test.beforeEach(async ({ request }) => {
   await reset(request)
@@ -19,6 +19,7 @@ test('wyłączony serwer nie zatrzymuje pracy, a wynik dochodzi po powrocie', as
   await expect(page.getByText('Brak łączności z serwerem · w kolejce: 1')).toBeVisible()
   await sprawdzEkran(page)
   await przyciskGlowny(page, 'DALEJ')
+  await oproznijPudelko(page)
   await expect(page.getByText('Następna próbka: nr 2')).toBeVisible()
   await request.post('/api/dev/serwis', { data: { adres: SERWIS } })
   await expect(page.getByLabel('Ostatnie wyniki')).toContainText(/Próbka 1: (DOBRA|ZŁA) \(TEST\)/)
@@ -38,6 +39,7 @@ test('pełna kolejka blokuje kolejny pomiar', async ({ page, request }) => {
   await request.post('/api/dev/serwis', { data: { adres: 'http://127.0.0.1:9' } })
   await pomiarDoAnalizy(page)
   await przyciskGlowny(page, 'DALEJ')
+  await oproznijPudelko(page)
   await expect(page.getByText('Kolejka pełna — powiadom serwis')).toBeVisible()
   await expect(page.getByRole('button', { name: 'NOWY POMIAR' })).toHaveCount(0)
 })
