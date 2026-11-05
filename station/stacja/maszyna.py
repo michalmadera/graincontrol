@@ -46,6 +46,10 @@ class StanMaszyny:
 
 
 class Maszyna(Protocol):
+    async def start(self) -> None: ...
+
+    async def stop(self) -> None: ...
+
     def stan(self) -> StanMaszyny: ...
 
     async def wywolaj(self, makro: str) -> None:

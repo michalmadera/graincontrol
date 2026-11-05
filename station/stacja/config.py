@@ -14,6 +14,7 @@ class Konfiguracja:
     tempo: float
     dane: Path
     serwis: str
+    moonraker: str = "ws://127.0.0.1:7125/websocket"
 
     @property
     def symulator(self) -> bool:
@@ -26,4 +27,5 @@ def wczytaj() -> Konfiguracja:
         tempo=float(os.environ.get("STACJA_TEMPO", "1")),
         dane=Path(os.environ.get("STACJA_DANE", DOMYSLNE_DANE)).expanduser(),
         serwis=os.environ.get("STACJA_SERWIS", "http://127.0.0.1:8000"),
+        moonraker=os.environ.get("STACJA_MOONRAKER", "ws://127.0.0.1:7125/websocket"),
     )

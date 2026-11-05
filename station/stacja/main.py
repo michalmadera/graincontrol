@@ -15,6 +15,7 @@ from .cykl import Cykl
 from .kamera import Kamera
 from .kolejka import Kolejka
 from .magazyn import Magazyn
+from .moonraker import MoonrakerMaszyna
 from .symulator import SymulatorMaszyny
 from .wysylka import Wysylka
 
@@ -27,9 +28,12 @@ class Blad(BaseModel):
 
 
 def zbuduj(app: FastAPI, konfiguracja: Konfiguracja) -> None:
-    if not konfiguracja.symulator:
+    if konfiguracja.symulator:
+        app.state.maszyna = SymulatorMaszyny(konfiguracja.tempo)
+    elif konfiguracja.maszyna == "moonraker":
+        app.state.maszyna = MoonrakerMaszyna(konfiguracja.moonraker)
+    else:
         raise RuntimeError(f"Nieznana maszyna: {konfiguracja.maszyna}")
-    app.state.maszyna = SymulatorMaszyny(konfiguracja.tempo)
     dane = konfiguracja.dane
     magazyn, kolejka = Magazyn(dane), Kolejka(dane)
     app.state.wysylka = Wysylka(kolejka, magazyn, konfiguracja.serwis, tempo=konfiguracja.tempo)
@@ -96,9 +100,11 @@ def create_app(konfiguracja: Konfiguracja | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def cykl_zycia(app: FastAPI):
+        await app.state.maszyna.start()
         app.state.wysylka.start()
         yield
         await app.state.wysylka.stop()
+        await app.state.maszyna.stop()
 
     app = FastAPI(title="GrainControl — stacja", lifespan=cykl_zycia)
     zbuduj(app, konfiguracja)

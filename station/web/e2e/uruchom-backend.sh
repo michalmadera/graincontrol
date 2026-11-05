@@ -3,7 +3,7 @@
 set -euo pipefail
 TUTAJ="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$TUTAJ/../../.." && pwd)"
-export STACJA_MASZYNA=symulator STACJA_TEMPO="${STACJA_TEMPO:-0.02}"
+export STACJA_MASZYNA="${STACJA_MASZYNA_E2E:-symulator}" STACJA_TEMPO="${STACJA_TEMPO:-0.02}"
 export STACJA_DANE="${STACJA_DANE_STALE:-$(mktemp -d)}"
 export GRAINCONTROL_DUMMY="${GRAINCONTROL_DUMMY:-1}"
 export STACJA_SERWIS="${STACJA_SERWIS:-http://127.0.0.1:8102}"

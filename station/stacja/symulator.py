@@ -35,6 +35,12 @@ class SymulatorMaszyny:
         self._spychacz = None
 
     # ---------------------------------------------------------- interfejs Maszyna
+    async def start(self) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
+
     def stan(self) -> StanMaszyny:
         return StanMaszyny(self._polaczona, self._webhooks, self._komunikat, self._zajety,
                            self._skalibrowany, self._przygotowany, self._przerwanie is not None,
