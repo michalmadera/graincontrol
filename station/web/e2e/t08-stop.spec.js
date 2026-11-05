@@ -10,6 +10,7 @@ const historia = async (request) => (await request.get('/api/dev/historia')).jso
 
 async function przytrzymaj(page, ms) {
   const przycisk = page.getByRole('button', { name: 'PRZYTRZYMAJ, ABY WZNOWIĆ' })
+  await expect(przycisk).toBeEnabled()
   await przycisk.hover()
   await page.mouse.down()
   await page.waitForTimeout(ms)

@@ -14,4 +14,4 @@ SERWIS=$!
 trap 'kill "$SERWIS" 2>/dev/null || true' EXIT
 
 echo "UI: http://127.0.0.1:${PORT:-8100}"
-PYTHONPATH="$TUTAJ" "$REPO/.venv/bin/python" -m uvicorn stacja.main:app --host 127.0.0.1 --port "${PORT:-8100}"
+PYTHONPATH="$TUTAJ" "$REPO/.venv/bin/python" -m uvicorn stacja.main:create_app --factory --host 127.0.0.1 --port "${PORT:-8100}"

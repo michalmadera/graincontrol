@@ -44,7 +44,7 @@ function OstatnieWyniki({ wyniki }) {
     <ul className="ostatnie" aria-label="Ostatnie wyniki">
       {wyniki.map((w) => (
         <li key={w.id_pomiaru}>
-          Próbka {w.numer_probki}: {w.blad ? 'błąd analizy' : w.werdykt === 'akceptowalna' ? 'DOBRA' : 'ZŁA'}
+          Próbka {w.numer_probki ?? '?'}: {w.blad ? 'błąd analizy' : w.werdykt === 'akceptowalna' ? 'DOBRA' : 'ZŁA'}
           {!w.blad && w.zrodlo_wyniku !== 'model' && ' (TEST)'}
         </li>
       ))}
@@ -85,16 +85,18 @@ function BladZdjecia({ stan, wyslij }) {
   return (
     <Tresc tytul="Nie udało się zrobić zdjęcia" opis={stan.komunikat}>
       <button className="glowny" onClick={() => wyslij('ponow_zdjecie')}>PONÓW ZDJĘCIE</button>
+      <button className="drugorzedny" onClick={() => wyslij('porzuc_zdjecie')}>Zakończ bez zdjęcia</button>
     </Tresc>
   )
 }
 
 function Analiza({ stan, wyslij }) {
-  if (stan.serwer_dostepny) {
+  if (!stan.mozna_dalej) {
     return <Tresc tytul="Analizuję…" opis="Wynik pojawi się na ekranie. Poczekaj." />
   }
   return (
-    <Tresc tytul="Wynik po przywróceniu łączności" opis="Zdjęcie jest bezpieczne i wyśle się samo. Możesz pracować dalej.">
+    <Tresc tytul={stan.serwer_dostepny ? 'Przed tą próbką czekają inne' : 'Wynik po przywróceniu łączności'}
+           opis="Zdjęcie jest bezpieczne i wyśle się samo. Możesz pracować dalej, wynik pojawi się na liście.">
       <button className="glowny" onClick={() => wyslij('dalej_bez_wyniku')}>DALEJ</button>
     </Tresc>
   )
@@ -140,7 +142,9 @@ function PrzyciskPrzytrzymaj({ onGotowe, children }) {
   const licznik = useRef(null)
   const [trzyma, setTrzyma] = useState(false)
   const pusc = () => { clearTimeout(licznik.current); setTrzyma(false) }
+  useEffect(() => () => clearTimeout(licznik.current), [])
   const nacisnij = () => {
+    clearTimeout(licznik.current)   // drugi palec nie może zostawić działającego licznika
     setTrzyma(true)
     licznik.current = setTimeout(() => { setTrzyma(false); onGotowe() }, CZAS_PRZYTRZYMANIA_MS)
   }
@@ -154,10 +158,11 @@ function PrzyciskPrzytrzymaj({ onGotowe, children }) {
   )
 }
 
-function Zatrzymana({ wyslij }) {
+function Zatrzymana({ stan, wyslij }) {
   return (
     <Tresc tytul="Maszyna zatrzymana" opis="Sprawdź, czy nic jej nie blokuje i czy nikt nie ma rąk w środku.">
       <PrzyciskPrzytrzymaj onGotowe={() => wyslij('wznow')}>PRZYTRZYMAJ, ABY WZNOWIĆ</PrzyciskPrzytrzymaj>
+      {stan.komunikat_maszyny && <p className="drobny">Komunikat maszyny: {stan.komunikat_maszyny}</p>}
     </Tresc>
   )
 }
@@ -219,6 +224,7 @@ function Serwis({ stan, wyslij }) {
         {potwierdzenie
           ? <button className="przelacznik niebezpieczny" onClick={() => { setPotwierdzenie(false); wyslij('serwis_reset_numeracji', { potwierdzam: true }) }}>Potwierdź reset numeracji</button>
           : <button className="przelacznik" onClick={() => setPotwierdzenie(true)}>Następny numer: {stan.nastepny_numer} (reset)</button>}
+        <button className="przelacznik" onClick={() => wyslij('serwis_reset_odniesienia')}>Resetuj odniesienie kamery</button>
         <button className="glowny maly" disabled={stan.trwa} onClick={() => wyslij('serwis_wyjdz')}>WYJDŹ</button>
       </div>
     </section>

@@ -10,11 +10,13 @@ import json
 import sys
 
 from websockets.asyncio.server import serve
+from websockets.exceptions import ConnectionClosed
 
 
 class AtrapaMoonrakera:
-    def __init__(self, czas_makra: float = 0.02) -> None:
+    def __init__(self, czas_makra: float = 0.02, opoznienie_statusu: float = 0.0) -> None:
         self.czas_makra = czas_makra
+        self.opoznienie_statusu = opoznienie_statusu
         self.skrypty: list[str] = []
         self.bledy: dict[str, str] = {}
         self.stan = {"zajety": 0, "skalibrowany": 0, "przygotowany": 0}
@@ -48,10 +50,20 @@ class AtrapaMoonrakera:
         if parametry is not None:
             tresc["params"] = parametry
         for klient in list(self.klienci):
-            await klient.send(json.dumps(tresc))
+            try:
+                await klient.send(json.dumps(tresc))
+            except ConnectionClosed:
+                pass
 
     async def _zmiana(self) -> None:
-        await self.rozeslij("notify_status_update", [self._obiekty(), 1.0])
+        obiekty = self._obiekty()
+        if self.opoznienie_statusu:
+            async def pozniej():
+                await asyncio.sleep(self.opoznienie_statusu)
+                await self.rozeslij("notify_status_update", [obiekty, 1.0])
+            asyncio.ensure_future(pozniej())
+        else:
+            await self.rozeslij("notify_status_update", [obiekty, 1.0])
 
     async def _obsluz(self, klient) -> None:
         self.klienci.add(klient)
@@ -83,7 +95,10 @@ class AtrapaMoonrakera:
             blad = {"code": 404, "message": f"Nieznana metoda {metoda}"}
         odpowiedz = {"jsonrpc": "2.0", "id": ident}
         odpowiedz.update({"error": blad} if blad else {"result": wynik})
-        await klient.send(json.dumps(odpowiedz))
+        try:
+            await klient.send(json.dumps(odpowiedz))
+        except ConnectionClosed:
+            pass    # klient zniknął w trakcie makra; samo makro i tak się wykonało
 
     async def _skrypt(self, skrypt: str) -> dict | None:
         self.skrypty.append(skrypt)

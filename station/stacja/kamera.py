@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,9 @@ if str(_ACQUISITION) not in sys.path:
 from server.camera import CameraBusy, CameraManager, make_backend  # noqa: E402
 from server.capture import CaptureController  # noqa: E402
 from server.config import load_config  # noqa: E402
+
+
+log = logging.getLogger(__name__)
 
 
 class BladZdjecia(RuntimeError):
@@ -38,6 +42,13 @@ class Kamera:
         """Tylko do testów: następne ujęcie kończy się błędem."""
         self._blad = tresc
 
+    def resetuj_odniesienie(self) -> None:
+        self.kontroler.reference = {"reference_ccm": None, "reference_lux": None}
+
+    @property
+    def atrapa(self) -> bool:
+        return self.kontroler.config.dummy
+
     async def zrob(self, numer: int) -> Zdjecie:
         if self._blad:
             tresc, self._blad = self._blad, None
@@ -48,10 +59,12 @@ class Kamera:
                 self.kontroler.start_session()
             self.kontroler.set_label(f"probka_{numer}")
             wynik = await self.menedzer.run_exclusive(lambda: self.kontroler.shoot())
-        except (CameraBusy, RuntimeError) as exc:
-            raise BladZdjecia(str(exc)) from exc
+        except (CameraBusy, RuntimeError, OSError) as exc:
+            log.error("Zdjęcie: %s", exc)
+            raise BladZdjecia("Kamera nie zrobiła zdjęcia. Ponów, a jeśli się powtórzy, wezwij serwis.") from exc
         if not wynik["accepted"]:
-            raise BladZdjecia("; ".join(wynik["violations"]) or "Zdjęcie niezgodne z profilem")
+            log.error("Zdjęcie niezgodne z profilem: %s", wynik["violations"])
+            raise BladZdjecia("Zdjęcie niezgodne z ustawieniami kamery. Ponów, a jeśli się powtórzy, wezwij serwis.")
         katalog = self.kontroler.session_dir / wynik["label"]
         stem = wynik["capture_id"]
         dng = katalog / f"{stem}.dng"

@@ -7,7 +7,7 @@ from stacja.main import create_app
 
 def klient(tmp_path, maszyna):
     konf = Konfiguracja(maszyna=maszyna, tempo=0.001, dane=tmp_path, serwis="http://127.0.0.1:9",
-                        moonraker="ws://127.0.0.1:9/websocket")
+                        moonraker="ws://127.0.0.1:9/websocket", atrapa_kamery_dozwolona=True)
     return TestClient(create_app(konf))
 
 

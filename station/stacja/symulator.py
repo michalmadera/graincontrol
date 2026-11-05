@@ -104,6 +104,8 @@ class SymulatorMaszyny:
             self._przerwanie.set()
 
     async def emergency_stop(self) -> None:
+        if not self._polaczona:
+            raise BrakPolaczenia("Brak połączenia z maszyną")
         self._webhooks, self._komunikat = "shutdown", "Zatrzymanie awaryjne"
         self._przerwij(BladMakra("Klipper: zatrzymanie awaryjne"))
 

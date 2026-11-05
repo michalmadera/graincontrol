@@ -72,3 +72,8 @@ button { font: inherit; cursor: pointer; }
 .przelacznik.niebezpieczny { background: var(--bad); color: #fff; font-weight: 800; }
 .ostrzezenie.maly { padding: 10px 16px; font-size: 20px; }
 .glowny.maly { min-width: 0; min-height: 72px; padding: 10px; font-size: 28px; margin-top: auto; }
+.ekran { display: contents; }
+.alarm { flex: 0 0 auto; margin: 0; padding: 14px 24px; font-size: 28px; font-weight: 900; text-align: center;
+  color: #fff; background: var(--bad); }
+.drobny { margin: 0; font-size: 18px; color: var(--dim); }
+button:disabled { cursor: default; }

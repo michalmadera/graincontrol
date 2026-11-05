@@ -205,9 +205,14 @@ Nie uzgodnione wprost, do sprawdzenia przy czytaniu:
 - **Błąd zdjęcia na ekranie 8:** osobny komunikat i przycisk „Ponów zdjęcie”, bez `ODBLOKUJ` i bez
   kalibracji, bo maszyna jest sprawna, a próbka leży rozgarnięta. Bez limitu prób. Odniesieniem
   macierzy CCM jest pierwsze udane ujęcie od startu aplikacji; reset odniesienia w trybie serwisowym.
-- **Serwer odrzuca zdjęcie (4xx):** zdjęcie trafia do osobnego katalogu „odrzucone”, nie blokuje
+- **Serwer odrzuca zdjęcie (400, 422):** zdjęcie trafia do osobnego katalogu „odrzucone”, nie blokuje
   kolejki i nie wlicza się do limitu, a robotnik widzi „Błąd analizy — powiadom serwis”.
-  **Błąd 5xx lub brak odpowiedzi w 60 s** to „serwer niedostępny”: ponawianie z odstępem.
+  **Każda inna odpowiedź bez poprawnego wyniku tego pomiaru albo brak odpowiedzi w 60 s** to „serwer
+  niedostępny”: ponawianie z odstępem, zdjęcie zostaje.
+- **Nieudany STOP** (maszyna nieosiągalna): czerwony komunikat „odłącz zasilanie maszyny” i ponawianie
+  do skutku. Każdy STOP, także poza cyklem, wymusza po kalibracji czyszczenie.
+- **Prawdziwa maszyna z atrapą kamery nie startuje** bez jawnego `STACJA_ATRAPA_KAMERY=1`, a domyślnym
+  trybem stacji nie jest symulator.
 - **DNG jest wysyłany razem z PNG** jako opcjonalne pole `raw`, a kopia lokalna znika po
   potwierdzeniu zapisu. `rekomendacja.md` §5 uznaje RAW za warunek odwracalności badań, a stacja nie
   jest archiwum (BR-009).

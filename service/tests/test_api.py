@@ -97,3 +97,28 @@ def test_health_mowi_czym_jest_analizator(klient):
     assert odp["status"] == "ok"
     assert odp["analizator"].startswith("atrapa")
     assert "dostepne" in odp["gpu"]
+
+
+def test_zdjecie_z_atrapy_kamery_nigdy_nie_jest_wynikiem_modelu(tmp_path):
+    class Model:
+        wersja = "model-1"
+        zrodlo = "model"
+
+        def analizuj(self, id_pomiaru):
+            return {"werdykt": "akceptowalna", "liczba_kamieni": 1, "liczba_wtracen": 0, "udzial_wtracen_proc": 0.0}
+    k = TestClient(create_app(Konfiguracja(dane=tmp_path, opoznienie_s=0), analizator=Model()))
+    assert wyslij(k).json()["zrodlo_wyniku"] == "model"
+    assert wyslij(k, metadane(akwizycja={"_dummy": True})).json()["zrodlo_wyniku"] == "atrapa"
+
+
+def test_blad_analizatora_to_500_i_mozna_ponowic(tmp_path):
+    class Awaria:
+        wersja = "x"
+        zrodlo = "model"
+
+        def analizuj(self, id_pomiaru):
+            raise RuntimeError("awaria modelu")
+    k = TestClient(create_app(Konfiguracja(dane=tmp_path, opoznienie_s=0), analizator=Awaria()),
+                   raise_server_exceptions=False)
+    assert wyslij(k).status_code == 500
+    assert not list((tmp_path / "pomiary").glob("[!.]*"))

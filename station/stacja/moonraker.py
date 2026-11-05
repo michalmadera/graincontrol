@@ -37,6 +37,7 @@ class MoonrakerMaszyna:
         self._oczekujace: dict[int, asyncio.Future] = {}
         self._numery = itertools.count(1)
         self._zadanie: asyncio.Task | None = None
+        self._subskrypcja: asyncio.Task | None = None
 
     async def start(self) -> None:
         self._zadanie = asyncio.create_task(self._petla())
@@ -99,12 +100,13 @@ class MoonrakerMaszyna:
             try:
                 async with connect(self.adres, max_size=None) as polaczenie:
                     self._polaczenie = polaczenie
-                    subskrypcja = asyncio.create_task(self._subskrybuj())
+                    self._zacznij_subskrypcje()
                     try:
                         async for tresc in polaczenie:
                             self._odbierz(json.loads(tresc))
                     finally:
-                        subskrypcja.cancel()
+                        if self._subskrypcja:
+                            self._subskrypcja.cancel()
             except (OSError, WebSocketException, asyncio.TimeoutError) as exc:
                 log.warning("Połączenie z Moonrakerem: %s", exc)
             finally:
@@ -118,8 +120,17 @@ class MoonrakerMaszyna:
             if not odpowiedz.done():
                 odpowiedz.set_exception(BrakPolaczenia("Utracono połączenie z maszyną"))
 
+    def _zacznij_subskrypcje(self) -> None:
+        if self._subskrypcja:
+            self._subskrypcja.cancel()
+        self._subskrypcja = asyncio.create_task(self._subskrybuj())
+
     async def _subskrybuj(self) -> None:
-        """Klipper może jeszcze startować: ponawiamy, aż Moonraker poda stan."""
+        """Klipper może jeszcze startować: ponawiamy, aż Moonraker poda stan inny niż „startup”.
+
+        Nie czekamy na notify_klippy_ready, bo nieudany start kończy się stanem „error” bez tego
+        powiadomienia i ekran zostałby na zawsze na „Maszyna się uruchamia”.
+        """
         while True:
             try:
                 wynik = await self._zlec("printer.objects.subscribe", {"objects": OBIEKTY})
@@ -131,7 +142,9 @@ class MoonrakerMaszyna:
                 continue
             self._obiekty = dict(wynik["status"])
             self._gotowe = True
-            return
+            if self._obiekty.get("webhooks", {}).get("state") != "startup":
+                return
+            await asyncio.sleep(self.odstep_ponowien)
 
     def _odbierz(self, tresc: dict) -> None:
         metoda = tresc.get("method")
@@ -147,9 +160,10 @@ class MoonrakerMaszyna:
             for nazwa, zmiany in tresc["params"][0].items():
                 self._obiekty.setdefault(nazwa, {}).update(zmiany)
         elif metoda == "notify_klippy_ready":
-            asyncio.ensure_future(self._subskrybuj())
+            self._zacznij_subskrypcje()
         elif metoda == "notify_klippy_shutdown":
             self._obiekty.setdefault("webhooks", {})["state"] = "shutdown"
         elif metoda == "notify_klippy_disconnected":
             # Restart Klippera kasuje flagi; stare „skalibrowany” nie może przetrwać do ponownej subskrypcji.
             self._obiekty = {"webhooks": {"state": "startup", "state_message": "Klipper niedostępny"}}
+            self._zacznij_subskrypcje()

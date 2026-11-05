@@ -22,10 +22,14 @@ KROKI_RUCHU = ("przygotowanie", "rozgarnianie", "czyszczenie", "kalibracja")
 AKCJE_Z_DANYMI = ("nowy_pomiar", "serwis_ruch", "serwis_ustawienia", "serwis_reset_numeracji")
 RUCHY_SERWISOWE = ("GORA_5MM", "DOL_5MM", "GORA_1MM", "DOL_1MM")
 KOD_PARTII = re.compile(r"[A-Za-z0-9]{10}")     # BR-010
+# Klipper wysyła stan co ok. 250 ms, więc flagi mogą dojść po odpowiedzi makra.
+ZWLOKA_FLAG_S = 1.0
+ODSTEP_PONOWIENIA_STOP_S = 1.0
 KOMUNIKAT_PRZERWANIA = "Poprzednia operacja została przerwana."
 
 
 _BLEDY = [
+    ("odrzucono", "Tego ruchu nie można teraz wykonać."),
     ("INTERLOCK", "Zabezpieczenie zatrzymało ruch maszyny."),
     ("poza zakresem", "Zabezpieczenie zatrzymało ruch maszyny."),
     ("system zajety", "Maszyna jest zablokowana po poprzednim błędzie."),
@@ -61,6 +65,12 @@ class Cykl:
         self._krok = self._krok_po_restarcie(dziennik.get("krok", "gotowa"))
         self._koniec_splywu: float | None = None
         self._zadanie: asyncio.Task | None = None
+        self._krok_od = float("-inf")
+        self._zajety_od: float | None = None
+        self._krok_przed_serwisem: str | None = None
+        self._komunikat_przed_serwisem: str | None = None
+        self._stop_nieudany = False
+        self._ponawianie_stop: asyncio.Task | None = None
 
     def _krok_po_restarcie(self, krok: str) -> str:
         """Zadanie zginęło razem z procesem, więc kroku w toku nie da się po prostu wznowić."""
@@ -86,9 +96,14 @@ class Cykl:
     @krok.setter
     def krok(self, krok: str) -> None:
         self._krok = krok
-        self.magazyn.zapisz_cykl({"krok": krok, "numer_probki": self.numer_probki,
-                                  "id_pomiaru": self.id_pomiaru, "komunikat": self.komunikat,
-                                  "kod_partii": self.kod_partii})
+        self._krok_od = time.monotonic()
+        try:
+            self.magazyn.zapisz_cykl({"krok": krok, "numer_probki": self.numer_probki,
+                                      "id_pomiaru": self.id_pomiaru, "komunikat": self.komunikat,
+                                      "kod_partii": self.kod_partii})
+        except OSError as exc:
+            # Ekran ma działać dalej; brak dziennika szkodzi dopiero przy kolejnym restarcie.
+            log.error("Nie udało się zapisać dziennika cyklu: %s", exc)
 
     @property
     def trwa(self) -> bool:
@@ -98,29 +113,39 @@ class Cykl:
         stan = self.maszyna.stan()
         if not stan.polaczona:
             return "brak_polaczenia"
-        if stan.webhooks == "shutdown":
+        if stan.webhooks in ("shutdown", "error"):
             return "zatrzymana"
         if stan.webhooks == "startup":
             return "uruchamianie"
         if stan.webhooks != "ready":
             return "brak_polaczenia"
         if self.trwa:
+            self._zajety_od = None
             return self.krok
+        teraz = time.monotonic()
+        zwloka = ZWLOKA_FLAG_S * self.tempo
+        # Makro nadal jedzie (restart stacji albo zerwane połączenie). Ma to pierwszeństwo przed
+        # błędem: ODBLOKUJ nad ruszającą się maszyną skasowałoby kalibrację w środku ruchu.
+        if stan.zajety and stan.w_toku:
+            return "oczekiwanie"
         # Po błędzie makra blokada ma pierwszeństwo: nieudana kalibracja też zostawia skalibrowany=0.
         if self.krok == "blad" and (stan.zajety or stan.skalibrowany):
             return "blad"
-        # Zajęta, choć stacja nic nie zleciła: restart stacji w trakcie makra albo stara blokada.
-        # Działającego makra nie wolno „odblokować”, bo ODBLOKUJ skasowałoby kalibrację.
         if stan.zajety:
-            return "oczekiwanie" if stan.w_toku else "blad"
+            # Flaga mogła się jeszcze nie odświeżyć po końcu makra, więc blokada dopiero po zwłoce.
+            if self._zajety_od is None:
+                self._zajety_od = teraz
+            return "oczekiwanie" if teraz - self._zajety_od < zwloka else "blad"
+        self._zajety_od = None
+        flagi_swieze = teraz - self._krok_od < zwloka
         # Kalibracja wynika ze stanu maszyny, nie z pamięci aplikacji: restart Klippera kasuje
         # skalibrowany, więc tej ścieżki nie da się ominąć.
         if self.krok == "serwis":
             return "serwis"
-        if not stan.skalibrowany:
+        if not stan.skalibrowany and not flagi_swieze:
             return "kalibracja"
         # Wsypanie ma sens tylko na wysokości załadunku; inaczej stół jest w nieznanej pozycji.
-        if self.krok == "wsyp" and not stan.przygotowany:
+        if self.krok == "wsyp" and not stan.przygotowany and not flagi_swieze:
             return "kalibracja"
         # Nowa próbka nie może spaść na starą, niezależnie od drogi, którą tu dotarliśmy.
         if self.krok == "gotowa" and self.magazyn.brudny():
@@ -137,6 +162,20 @@ class Cykl:
         if self.krok == "analiza" and not self.trwa and self.magazyn.wynik(self.id_pomiaru):
             self.krok = "wynik"
 
+    def _mozna_dalej(self) -> bool:
+        """Bez czekania, gdy serwera nie ma albo przed tą próbką stoją inne (nawet dziesiątki minut)."""
+        if self.krok != "analiza":
+            return False
+        if not self.wysylka.serwer_dostepny:
+            return True
+        wpisy = self.kolejka.oczekujace()
+        if not wpisy:
+            return False
+        try:
+            return wpisy[0].pomiar.get("id_pomiaru") != self.id_pomiaru
+        except (OSError, ValueError):
+            return False
+
     def opis(self) -> dict:
         self._odbierz_wynik()
         ekran = self._ekran()
@@ -152,6 +191,9 @@ class Cykl:
             "komunikat": self.komunikat or (KOMUNIKAT_PRZERWANIA if ekran == "blad" else None),
             "wynik": self.magazyn.wynik(self.id_pomiaru) if self.krok == "wynik" else None,
             "serwer_dostepny": self.wysylka.serwer_dostepny,
+            "mozna_dalej": self._mozna_dalej(),
+            "stop_nieudany": self._stop_nieudany,
+            "komunikat_maszyny": self.maszyna.stan().komunikat,
             "w_kolejce": len(self.kolejka.oczekujace()),
             "kolejka_pelna": self._kolejka_pelna(),
             "ostatnie_wyniki": self.magazyn.ostatnie_wyniki(),
@@ -176,9 +218,13 @@ class Cykl:
             "serwis_ruch": self._serwis_ruch,
             "serwis_ustawienia": self._serwis_ustawienia,
             "serwis_reset_numeracji": self._serwis_reset_numeracji,
+            "serwis_reset_odniesienia": self._serwis_reset_odniesienia,
+            "porzuc_zdjecie": self._porzuc_zdjecie,
         }.get(nazwa)
         if obsluga is None:
             raise ValueError(f"Nieznana akcja: {nazwa}")
+        if self._stop_nieudany:
+            raise ValueError("STOP nie dotarł do maszyny")
         if self.trwa:
             raise ValueError("Maszyna pracuje")
         self._odbierz_wynik()
@@ -193,14 +239,43 @@ class Cykl:
         wynik = "ok"
         try:
             await self.maszyna.emergency_stop()
-        except (BladMakra, BrakPolaczenia, OSError) as exc:
+            self._zakoncz_ponawianie_stop()
+        except (BladMakra, BrakPolaczenia, OSError, asyncio.TimeoutError) as exc:
             log.error("STOP nie dotarł do maszyny: %s", exc)
             wynik = "brak_polaczenia"
+            self._stop_nieudany = True
+            if self._ponawianie_stop is None or self._ponawianie_stop.done():
+                self._ponawianie_stop = asyncio.create_task(self._ponawiaj_stop())
         if self.trwa:
             self._zadanie.cancel()
             await asyncio.gather(self._zadanie, return_exceptions=True)
         self._koniec_splywu = None
+        # Po każdym STOP: kalibracja i czyszczenie, także gdy STOP nie dotarł i maszyna jedzie dalej.
+        try:
+            self.magazyn.ustaw_brudny(True)
+        except OSError as exc:
+            log.error("Nie udało się zapisać stanu stołu: %s", exc)
+        self.komunikat = None
+        self.krok = "kalibracja"
         return wynik
+
+    def _zakoncz_ponawianie_stop(self) -> None:
+        self._stop_nieudany = False
+        if self._ponawianie_stop is not None and self._ponawianie_stop is not asyncio.current_task():
+            self._ponawianie_stop.cancel()
+        self._ponawianie_stop = None
+
+    async def _ponawiaj_stop(self) -> None:
+        """Robotnik nacisnął STOP, więc maszyna ma stanąć, gdy tylko znów będzie osiągalna."""
+        while True:
+            await asyncio.sleep(ODSTEP_PONOWIENIA_STOP_S * self.tempo)
+            try:
+                await self.maszyna.emergency_stop()
+            except (BladMakra, BrakPolaczenia, OSError, asyncio.TimeoutError) as exc:
+                log.warning("Ponowienie STOP: %s", exc)
+                continue
+            self._zakoncz_ponawianie_stop()
+            return
 
     def _wznow(self) -> None:
         self._wymagaj("zatrzymana")
@@ -238,7 +313,17 @@ class Cykl:
             raise ValueError(f"Akcja niedostępna na ekranie {self._ekran()}")
 
     def _uruchom(self, koro) -> None:
-        self._zadanie = asyncio.create_task(koro)
+        self._zadanie = asyncio.create_task(self._strzez(koro))
+        # STOP tuż po starcie anuluje zadanie, zanim coś wykona: korutyna zostaje wtedy nieużyta.
+        self._zadanie.add_done_callback(lambda _: koro.close())
+
+    async def _strzez(self, koro) -> None:
+        """Nieprzewidziany błąd ma dać ekran błędu, a nie ekran „trwa” bez żadnego przycisku."""
+        try:
+            await koro
+        except Exception as exc:
+            log.exception("Nieoczekiwany błąd cyklu")
+            self._przerwano(exc)
 
     # ------------------------------------------------------------- kalibracja
     def _kalibruj(self) -> None:
@@ -284,15 +369,22 @@ class Cykl:
 
     # ------------------------------------------------------------- tryb serwisowy
     def _serwis_wejdz(self) -> None:
-        if self._ekran() not in ("gotowa", "kalibracja", "oproznij"):
+        ekran = self._ekran()
+        if ekran not in ("gotowa", "kalibracja", "oproznij", "blad_zdjecia"):
             raise ValueError("Tryb serwisowy jest niedostępny w trakcie pomiaru")
+        self._krok_przed_serwisem = ekran if ekran == "blad_zdjecia" else None
+        self._komunikat_przed_serwisem = self.komunikat
         self.komunikat = None
         self.krok = "serwis"
 
     def _serwis_wyjdz(self) -> None:
         self._wymagaj("serwis")
-        self.komunikat = None
-        self.krok = "gotowa"
+        if self._krok_przed_serwisem:
+            self.komunikat = self._komunikat_przed_serwisem
+        else:
+            self.komunikat = None
+        self.krok = self._krok_przed_serwisem or "gotowa"
+        self._krok_przed_serwisem = None
 
     def _serwis_ruch(self, dane: dict) -> None:
         self._wymagaj("serwis")
@@ -300,6 +392,7 @@ class Cykl:
         if ruch not in RUCHY_SERWISOWE:
             raise ValueError(f"Nieznany ruch: {ruch}")
         self.komunikat = None
+        self._krok_przed_serwisem = None    # stół się ruszył, próbka na zdjęciu nie jest już ta sama
         self._uruchom(self._wykonaj_ruch(ruch))
 
     async def _wykonaj_ruch(self, ruch: str) -> None:
@@ -319,6 +412,10 @@ class Cykl:
         if dane.get("potwierdzam") is not True:
             raise ValueError("Reset numeracji wymaga potwierdzenia")
         self.magazyn.zresetuj_numeracje()
+
+    def _serwis_reset_odniesienia(self) -> None:
+        self._wymagaj("serwis")
+        self.kamera.resetuj_odniesienie()
 
     # ------------------------------------------------------------- pomiar
     def _kolejka_pelna(self) -> bool:
@@ -386,6 +483,11 @@ class Cykl:
             self.komunikat = str(exc)
             self.krok = "blad_zdjecia"
             return
+        except OSError as exc:
+            log.error("Zapis zdjęcia do kolejki: %s", exc)
+            self.komunikat = "Nie udało się zapisać zdjęcia. Ponów, a jeśli się powtórzy, wezwij serwis."
+            self.krok = "blad_zdjecia"
+            return
         self.krok = "analiza"
         self.wysylka.obudz()
 
@@ -394,13 +496,18 @@ class Cykl:
         self.krok = "zdjecie"
         self._uruchom(self._zrob_zdjecie())
 
+    def _porzuc_zdjecie(self) -> None:
+        self._wymagaj("blad_zdjecia")
+        self.komunikat = None
+        self._zacznij_czyszczenie()
+
     def _dalej(self) -> None:
         self._wymagaj("wynik")
         self._zacznij_czyszczenie()
 
     def _dalej_bez_wyniku(self) -> None:
         self._wymagaj("analiza")
-        if self.wysylka.serwer_dostepny:
+        if not self._mozna_dalej():
             raise ValueError("Serwer działa, wynik zaraz będzie")
         self._zacznij_czyszczenie()
 

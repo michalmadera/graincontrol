@@ -24,6 +24,10 @@ Plan: `tasks/plan.md`. Każde zadanie: pytest + Playwright na atrapach, commit l
 - [x] T10 Tryb serwisowy i skanowanie
 - [x] T11 Klient Moonrakera
 - [x] T12 Docker GPU i dokumentacja
-- [ ] T13 Odbiór
+- [x] T13 Odbiór
 
 ## Notatki
+- Niezależny przegląd kodu znalazł 18 usterek; poprawione, z testami w `station/tests/test_przeglad.py` i `web/e2e/t13-odbior.spec.js`.
+- Niesprawdzone: prawdziwy Moonraker, `printer.cfg`, kamera, wykrycie GPU w kontenerze (Docker na tym komputerze nie uruchamia kontenerów z GPU).
+- Znane ograniczenie: ekran pokazuje 5 ostatnich wyników, starsze są zapisane na stacji, ale niewidoczne.
+- Po 1 h bezczynności na ekranie wyniku pojawia się kalibracja; wynik zostaje na liście ostatnich.

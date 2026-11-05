@@ -62,17 +62,26 @@ class Wymuszenie(BaseModel):
     status: int | None = None
 
 
+def _utrwal(sciezka: Path) -> None:
+    deskryptor = os.open(sciezka, os.O_RDONLY)
+    try:
+        os.fsync(deskryptor)
+    finally:
+        os.close(deskryptor)
+
+
 def _zapisz_atomowo(cel: Path, tresc: str) -> None:
     tymczasowy = cel.with_name(cel.name + ".tmp")
     tymczasowy.write_text(tresc, encoding="utf-8")
+    _utrwal(tymczasowy)
     os.replace(tymczasowy, cel)
 
 
-def create_app(konfiguracja: Konfiguracja | None = None) -> FastAPI:
+def create_app(konfiguracja: Konfiguracja | None = None, analizator=None) -> FastAPI:
     konfiguracja = konfiguracja or wczytaj()
     pomiary = konfiguracja.dane / "pomiary"
     pomiary.mkdir(parents=True, exist_ok=True)
-    analizator = AtrapaAnalizatora()
+    analizator = analizator or AtrapaAnalizatora()
     wymuszenie = Wymuszenie()
     # Jedna analiza naraz: GPU i tak nie pomieści więcej, a ponowienie tego samego id musi poczekać.
     zamek = asyncio.Lock()
@@ -106,23 +115,29 @@ def create_app(konfiguracja: Konfiguracja | None = None) -> FastAPI:
             roboczy.mkdir()
             with open(roboczy / "zdjecie.png", "wb") as cel:
                 shutil.copyfileobj(zdjecie.file, cel)
+            _utrwal(roboczy / "zdjecie.png")
             if raw is not None:
                 with open(roboczy / "zdjecie.dng", "wb") as cel:
                     shutil.copyfileobj(raw.file, cel)
+                _utrwal(roboczy / "zdjecie.dng")
             _zapisz_atomowo(roboczy / "metadane.json", dane.model_dump_json(indent=1))
 
             await asyncio.sleep(konfiguracja.opoznienie_s)
             wynik = {
                 "id_pomiaru": dane.id_pomiaru,
                 **analizator.analizuj(dane.id_pomiaru),
-                "zrodlo_wyniku": analizator.zrodlo,
+                # Syntetyczne zdjęcie nie może dać wyniku wyglądającego na prawdziwy pomiar.
+                "zrodlo_wyniku": "atrapa" if dane.akwizycja.get("_dummy") else analizator.zrodlo,
                 "wersja_analizatora": analizator.wersja,
             }
             if wymuszenie.werdykt:
                 wynik["werdykt"] = wymuszenie.werdykt
             _zapisz_atomowo(roboczy / "wynik.json", json.dumps(wynik, ensure_ascii=False, indent=1))
-            # Katalog pojawia się pod właściwą nazwą dopiero z kompletem plików.
+            _utrwal(roboczy)
+            # Katalog pojawia się pod właściwą nazwą dopiero z kompletem plików. Stacja kasuje
+            # swoją kopię zaraz po odpowiedzi, więc wszystko musi być już fizycznie na dysku.
             os.replace(roboczy, katalog)
+            _utrwal(pomiary)
             return wynik
 
     if konfiguracja.dev:

@@ -29,7 +29,7 @@ export STACJA_MOONRAKER=ws://127.0.0.1:7125/websocket
 export STACJA_SERWIS=http://<serwer-gpu>:8000
 export STACJA_DANE=~/stacja-dane
 export GRAINCONTROL_PROFILE=~/graincontrol/profiles/acquisition/<profil>.json
-PYTHONPATH=station .venv/bin/python -m uvicorn stacja.main:app --host 127.0.0.1 --port 8100
+PYTHONPATH=station .venv/bin/python -m uvicorn stacja.main:create_app --factory --host 127.0.0.1 --port 8100
 ```
 
 Instalacja trybu kiosk nie jest częścią tego etapu.

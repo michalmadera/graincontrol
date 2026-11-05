@@ -28,6 +28,14 @@ class Wpis:
         return json.loads((self.katalog / "pomiar.json").read_text(encoding="utf-8"))
 
 
+def _utrwal(sciezka: Path) -> None:
+    deskryptor = os.open(sciezka, os.O_RDONLY)
+    try:
+        os.fsync(deskryptor)
+    finally:
+        os.close(deskryptor)
+
+
 class Kolejka:
     def __init__(self, katalog: Path) -> None:
         self.katalog = Path(katalog) / "kolejka"
@@ -43,17 +51,25 @@ class Kolejka:
                        if k.name.split("_")[0].isdigit()), default=0) + 1
         katalog = self.katalog / f"{kolejny:08d}_{pomiar['id_pomiaru']}"
         katalog.mkdir()
-        os.replace(zdjecie.png, katalog / "zdjecie.png")
-        if zdjecie.dng:
-            os.replace(zdjecie.dng, katalog / "zdjecie.dng")
-        akwizycja = json.loads(zdjecie.meta.read_text(encoding="utf-8"))
-        tymczasowy = katalog / "pomiar.json.tmp"
-        # pomiar.json powstaje ostatni i atomowo: jego obecność znaczy „wpis kompletny”.
-        with open(tymczasowy, "w", encoding="utf-8") as plik:
-            json.dump({**pomiar, "akwizycja": akwizycja}, plik, ensure_ascii=False)
-            plik.flush()
-            os.fsync(plik.fileno())
-        os.replace(tymczasowy, katalog / "pomiar.json")
+        try:
+            os.replace(zdjecie.png, katalog / "zdjecie.png")
+            _utrwal(katalog / "zdjecie.png")
+            if zdjecie.dng:
+                os.replace(zdjecie.dng, katalog / "zdjecie.dng")
+                _utrwal(katalog / "zdjecie.dng")
+            akwizycja = json.loads(zdjecie.meta.read_text(encoding="utf-8"))
+            tymczasowy = katalog / "pomiar.json.tmp"
+            # pomiar.json powstaje ostatni i atomowo: jego obecność znaczy „wpis kompletny”,
+            # więc obrazy muszą być już fizycznie na dysku.
+            with open(tymczasowy, "w", encoding="utf-8") as plik:
+                json.dump({**pomiar, "akwizycja": akwizycja}, plik, ensure_ascii=False)
+                plik.flush()
+                os.fsync(plik.fileno())
+            os.replace(tymczasowy, katalog / "pomiar.json")
+            _utrwal(katalog)
+        except OSError:
+            shutil.rmtree(katalog, ignore_errors=True)
+            raise
         return Wpis(katalog)
 
     def usun(self, wpis: Wpis) -> None:

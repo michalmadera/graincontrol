@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-LIMIT_WYNIKOW = 20
+LIMIT_WYNIKOW = 200      # więcej niż mieści kolejka, żeby wyniki po przerwie nie przepadały
 
 USTAWIENIA_DOMYSLNE = {
     "skanowanie_wlaczone": False,
@@ -106,6 +106,8 @@ class Magazyn:
     # ------------------------------------------------------------- wyniki
     def zapisz_wynik(self, wynik: dict) -> None:
         wyniki = self._dane.setdefault("wyniki", [])
+        # Awaria między zapisem wyniku a usunięciem zdjęcia kończy się ponowną wysyłką tego samego id.
+        wyniki[:] = [w for w in wyniki if w.get("id_pomiaru") != wynik.get("id_pomiaru")]
         wyniki.append(wynik)
         del wyniki[:-LIMIT_WYNIKOW]
         self.zapisz()
@@ -113,7 +115,7 @@ class Magazyn:
     def wynik(self, id_pomiaru: str | None) -> dict | None:
         return next((w for w in self._dane.get("wyniki", []) if w.get("id_pomiaru") == id_pomiaru), None)
 
-    def ostatnie_wyniki(self, ile: int = 3) -> list[dict]:
+    def ostatnie_wyniki(self, ile: int = 5) -> list[dict]:
         return list(reversed(self._dane.get("wyniki", [])[-ile:]))
 
     # ------------------------------------------------------------- ustawienia

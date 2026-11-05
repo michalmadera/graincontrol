@@ -3,11 +3,14 @@ import { pobierzStan, akcja, stop } from './api.js'
 import { EKRANY } from './ekrany.jsx'
 
 const ODSWIEZANIE_MS = 300
+const BLOKADA_PO_ZMIANIE_MS = 800
 
 export default function App() {
   const [stan, setStan] = useState(null)
   const [brakStacji, setBrakStacji] = useState(false)
   const [blad, setBlad] = useState(null)
+  const [stopNieDotarl, setStopNieDotarl] = useState(false)
+  const [zablokowany, setZablokowany] = useState(false)
 
   useEffect(() => {
     let aktywny = true
@@ -26,7 +29,14 @@ export default function App() {
 
   // Komunikat dotyczy ekranu, na którym się pojawił.
   const ekran = stan?.ekran
-  useEffect(() => { setBlad(null) }, [ekran])
+  useEffect(() => {
+    setBlad(null)
+    // Główny przycisk bywa w tym samym miejscu na kolejnym ekranie, a tam może uruchamiać ruch:
+    // podwójne dotknięcie albo drganie styku nie może nacisnąć go przypadkiem.
+    setZablokowany(true)
+    const id = setTimeout(() => setZablokowany(false), BLOKADA_PO_ZMIANIE_MS)
+    return () => clearTimeout(id)
+  }, [ekran])
 
   const wTrakcie = useRef(false)
   const wyslij = async (nazwa, cialo) => {
@@ -45,31 +55,40 @@ export default function App() {
   const zatrzymaj = async () => {
     try {
       setStan(await stop())
-    } catch (e) {
-      setBlad(e.message)
+      setStopNieDotarl(false)
+    } catch {
+      setStopNieDotarl(true)
     }
   }
 
-  if (brakStacji || !stan) {
-    return <div className="aplikacja"><Tresc tytul={brakStacji ? 'Brak połączenia ze stacją' : 'Uruchamianie…'} /></div>
-  }
-  const Ekran = EKRANY[stan.ekran] ?? (() => <Tresc tytul="Nieznany stan" opis={stan.ekran} />)
+  const Ekran = stan && (EKRANY[stan.ekran] ?? (() => <Tresc tytul="Nieznany stan" opis={stan.ekran} />))
   return (
     <div className="aplikacja">
+      {/* Pasek ze STOP jest zawsze, także gdy odpytanie stacji się nie udało. */}
       <header className="pasek">
         <Logo wyslij={wyslij} />
-        {stan.numer_probki && <span className="numer">Próbka nr {stan.numer_probki}</span>}
-        {(!stan.serwer_dostepny || stan.w_kolejce > 1) && (
+        {stan?.numer_probki && <span className="numer">Próbka nr {stan.numer_probki}</span>}
+        {stan && (!stan.serwer_dostepny || stan.w_kolejce > 1) && (
           <span className={stan.serwer_dostepny ? 'lacznosc' : 'lacznosc offline'}>
             {stan.serwer_dostepny ? 'Serwer działa' : 'Brak łączności z serwerem'} · w kolejce: {stan.w_kolejce}
           </span>
         )}
         <button className="stop" onClick={zatrzymaj}>STOP</button>
       </header>
-      <Kroki ekran={stan.ekran} />
+      {(stopNieDotarl || stan?.stop_nieudany) && (
+        <p className="alarm" role="alert">STOP NIE DOTARŁ DO MASZYNY — odłącz zasilanie maszyny</p>
+      )}
+      {stan && !brakStacji && <Kroki ekran={stan.ekran} />}
       <main className="glowna">
-        <Ekran stan={stan} wyslij={wyslij} />
-        {blad && <p className="blad" role="alert">{blad}</p>}
+        {brakStacji || !stan
+          ? <Tresc tytul={brakStacji ? 'Brak połączenia ze stacją' : 'Uruchamianie…'}
+                   opis={brakStacji ? 'Nie wkładaj rąk do maszyny. Trwa ponowne łączenie…' : undefined} />
+          : (
+            <fieldset className="ekran" disabled={zablokowany}>
+              <Ekran stan={stan} wyslij={wyslij} />
+              {blad && <p className="blad" role="alert">{blad}</p>}
+            </fieldset>
+          )}
       </main>
     </div>
   )
@@ -81,6 +100,7 @@ const CZAS_WEJSCIA_SERWIS_MS = 5000
 function Logo({ wyslij }) {
   const licznik = useRef(null)
   const pusc = () => clearTimeout(licznik.current)
+  useEffect(() => pusc, [])
   return (
     <span className="tytul" data-testid="logo"
           onPointerDown={() => { licznik.current = setTimeout(() => wyslij('serwis_wejdz'), CZAS_WEJSCIA_SERWIS_MS) }}

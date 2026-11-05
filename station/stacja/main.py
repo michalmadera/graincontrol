@@ -35,9 +35,15 @@ def zbuduj(app: FastAPI, konfiguracja: Konfiguracja) -> None:
     else:
         raise RuntimeError(f"Nieznana maszyna: {konfiguracja.maszyna}")
     dane = konfiguracja.dane
+    kamera = Kamera(dane)
+    # Bez rpicam silnik po cichu przechodzi na syntetyczne zdjęcia: przy prawdziwej maszynie
+    # prawdziwa próbka zostałaby zgarnięta bez zdjęcia.
+    if not konfiguracja.symulator and kamera.atrapa and not konfiguracja.atrapa_kamery_dozwolona:
+        raise RuntimeError("Maszyna rzeczywista, a atrapa kamery: brak rpicam-still? "
+                           "Świadomy test: STACJA_ATRAPA_KAMERY=1.")
     magazyn, kolejka = Magazyn(dane), Kolejka(dane)
     app.state.wysylka = Wysylka(kolejka, magazyn, konfiguracja.serwis, tempo=konfiguracja.tempo)
-    app.state.cykl = Cykl(app.state.maszyna, magazyn, Kamera(dane), kolejka, app.state.wysylka,
+    app.state.cykl = Cykl(app.state.maszyna, magazyn, kamera, kolejka, app.state.wysylka,
                           konfiguracja.tempo)
 
 
@@ -141,6 +147,3 @@ def create_app(konfiguracja: Konfiguracja | None = None) -> FastAPI:
             return FileResponse(STATIC / "index.html")
 
     return app
-
-
-app = create_app()
