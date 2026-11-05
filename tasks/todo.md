@@ -10,7 +10,7 @@ Plan: `tasks/plan.md`. Każde zadanie: pytest + Playwright na atrapach, commit l
 
 ## Faza 2: serwer i wynik
 - [x] T4 Serwis z atrapą i Docker `mock`
-- [ ] T5 Wysyłka i ekran wyniku
+- [x] T5 Wysyłka i ekran wyniku
 - [ ] T6 Awarie serwera
 - [ ] Punkt kontrolny B
 

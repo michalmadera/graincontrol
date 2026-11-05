@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,3 +55,6 @@ class Kolejka:
             os.fsync(plik.fileno())
         os.replace(tymczasowy, katalog / "pomiar.json")
         return Wpis(katalog)
+
+    def usun(self, wpis: Wpis) -> None:
+        shutil.rmtree(wpis.katalog)

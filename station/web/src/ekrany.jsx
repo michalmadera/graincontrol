@@ -61,6 +61,20 @@ function Analiza() {
   return <Tresc tytul="Analizuję…" opis="Wynik pojawi się na ekranie. Poczekaj." />
 }
 
+function Wynik({ stan, wyslij }) {
+  const w = stan.wynik
+  const dobra = w.werdykt === 'akceptowalna'
+  return (
+    <section className="tresc">
+      {/* Decyduje odpowiedź serwera: wszystko poza wynikiem z modelu to tylko test. */}
+      {w.zrodlo_wyniku !== 'model' && <p className="test">TEST – wynik niemiarodajny</p>}
+      <h1 className={dobra ? 'werdykt dobra' : 'werdykt zla'}>{dobra ? 'DOBRA' : 'ZŁA'}</h1>
+      <p className="opis">Kamieni: {w.liczba_kamieni} · wtrąceń: {w.liczba_wtracen} ({w.udzial_wtracen_proc}%)</p>
+      <button className="glowny" onClick={() => wyslij('dalej')}>DALEJ</button>
+    </section>
+  )
+}
+
 export const EKRANY = {
   brak_polaczenia: BrakPolaczenia,
   kalibracja: Kalibracja,
@@ -72,4 +86,5 @@ export const EKRANY = {
   zdjecie: Zdjecie,
   blad_zdjecia: BladZdjecia,
   analiza: Analiza,
+  wynik: Wynik,
 }

@@ -1,8 +1,11 @@
 import { expect } from '@playwright/test'
 
+export const SERWIS = 'http://127.0.0.1:8102'
+
 export async function reset(request) {
   const odp = await request.post('/api/dev/reset')
   expect(odp.ok()).toBeTruthy()
+  await request.post(`${SERWIS}/api/dev/wymus`, { data: {} })
 }
 
 export async function przyciskGlowny(page, nazwa) {

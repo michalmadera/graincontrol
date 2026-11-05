@@ -6,7 +6,7 @@ test.beforeEach(async ({ request }) => {
   await request.post('/api/dev/ustawienia', { data: { czas_splywu_s: 40 } })
 })
 
-test('pomiar prowadzi krok po kroku aż do analizy', async ({ page, request }) => {
+test('pomiar prowadzi krok po kroku aż do wyniku', async ({ page, request }) => {
   await skalibruj(page)
   await expect(page.getByText('Następna próbka: nr 1')).toBeVisible()
   await przyciskGlowny(page, 'NOWY POMIAR')
@@ -17,7 +17,7 @@ test('pomiar prowadzi krok po kroku aż do analizy', async ({ page, request }) =
   await przyciskGlowny(page, 'PRÓBKA WSYPANA')
   await expect(page.getByRole('heading', { name: 'Kamyki spływają' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Maszyna rozgarnia próbkę' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Analizuję…' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /DOBRA|ZŁA/ })).toBeVisible()
   const historia = await (await request.get('/api/dev/historia')).json()
   expect(historia).toEqual(['KALIBRUJ', 'PRZYGOTUJ', 'POMIAR'])
 })

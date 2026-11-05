@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 
+LIMIT_WYNIKOW = 20
+
 USTAWIENIA_DOMYSLNE = {
     "skanowanie_wlaczone": False,
     "czas_splywu_s": 30,
@@ -46,6 +48,16 @@ class Magazyn:
         self._dane["nastepny_numer"] = numer + 1
         self.zapisz()
         return numer
+
+    # ------------------------------------------------------------- wyniki
+    def zapisz_wynik(self, wynik: dict) -> None:
+        wyniki = self._dane.setdefault("wyniki", [])
+        wyniki.append(wynik)
+        del wyniki[:-LIMIT_WYNIKOW]
+        self.zapisz()
+
+    def wynik(self, id_pomiaru: str | None) -> dict | None:
+        return next((w for w in self._dane.get("wyniki", []) if w.get("id_pomiaru") == id_pomiaru), None)
 
     # ------------------------------------------------------------- ustawienia
     @property

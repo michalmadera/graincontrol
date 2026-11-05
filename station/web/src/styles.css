@@ -33,3 +33,7 @@ button { font: inherit; cursor: pointer; }
 .kroki li.zrobione { background: #173a26; color: var(--good); }
 .drugorzedny { min-width: 240px; min-height: 72px; font-size: 26px; color: var(--fg);
   background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; }
+.test { margin: 0; padding: 12px 28px; font-size: 30px; font-weight: 800; color: #201800;
+  background: var(--warn); border-radius: 10px; }
+.tresc h1.werdykt { font-size: 120px; font-weight: 900; line-height: 1; }
+.werdykt.dobra { color: var(--good); } .werdykt.zla { color: var(--bad); }

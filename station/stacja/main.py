@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import shutil
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException
@@ -15,6 +16,7 @@ from .kamera import Kamera
 from .kolejka import Kolejka
 from .magazyn import Magazyn
 from .symulator import SymulatorMaszyny
+from .wysylka import Wysylka
 
 STATIC = Path(__file__).resolve().parent / "static"
 
@@ -29,7 +31,9 @@ def zbuduj(app: FastAPI, konfiguracja: Konfiguracja) -> None:
         raise RuntimeError(f"Nieznana maszyna: {konfiguracja.maszyna}")
     app.state.maszyna = SymulatorMaszyny(konfiguracja.tempo)
     dane = konfiguracja.dane
-    app.state.cykl = Cykl(app.state.maszyna, Magazyn(dane), Kamera(dane), Kolejka(dane),
+    magazyn, kolejka = Magazyn(dane), Kolejka(dane)
+    app.state.wysylka = Wysylka(kolejka, magazyn, konfiguracja.serwis, tempo=konfiguracja.tempo)
+    app.state.cykl = Cykl(app.state.maszyna, magazyn, Kamera(dane), kolejka, app.state.wysylka,
                           konfiguracja.tempo)
 
 
@@ -38,9 +42,11 @@ def router_dev(app: FastAPI, konfiguracja: Konfiguracja) -> APIRouter:
     dev = APIRouter(prefix="/api/dev")
 
     @dev.post("/reset")
-    def reset() -> dict:
+    async def reset() -> dict:
+        await app.state.wysylka.stop()
         shutil.rmtree(konfiguracja.dane, ignore_errors=True)
         zbuduj(app, konfiguracja)
+        app.state.wysylka.start()
         return {"ok": True}
 
     @dev.post("/rozlacz")
@@ -82,7 +88,14 @@ def router_dev(app: FastAPI, konfiguracja: Konfiguracja) -> APIRouter:
 
 def create_app(konfiguracja: Konfiguracja | None = None) -> FastAPI:
     konfiguracja = konfiguracja or wczytaj()
-    app = FastAPI(title="GrainControl — stacja")
+
+    @asynccontextmanager
+    async def cykl_zycia(app: FastAPI):
+        app.state.wysylka.start()
+        yield
+        await app.state.wysylka.stop()
+
+    app = FastAPI(title="GrainControl — stacja", lifespan=cykl_zycia)
     zbuduj(app, konfiguracja)
     if konfiguracja.symulator:
         app.include_router(router_dev(app, konfiguracja))

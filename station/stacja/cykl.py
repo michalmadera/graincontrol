@@ -10,15 +10,17 @@ from .kamera import BladZdjecia, Kamera
 from .kolejka import Kolejka
 from .magazyn import Magazyn
 from .maszyna import BladMakra, BrakPolaczenia, Maszyna
+from .wysylka import Wysylka
 
 
 class Cykl:
     def __init__(self, maszyna: Maszyna, magazyn: Magazyn, kamera: Kamera, kolejka: Kolejka,
-                 tempo: float = 1.0) -> None:
+                 wysylka: Wysylka, tempo: float = 1.0) -> None:
         self.maszyna = maszyna
         self.magazyn = magazyn
         self.kamera = kamera
         self.kolejka = kolejka
+        self.wysylka = wysylka
         self.tempo = tempo
         self.krok = "gotowa"
         self.numer_probki: int | None = None
@@ -43,7 +45,12 @@ class Cykl:
             return "kalibracja"
         return self.krok
 
+    def _odbierz_wynik(self) -> None:
+        if self.krok == "analiza" and not self.trwa and self.magazyn.wynik(self.id_pomiaru):
+            self.krok = "wynik"
+
     def opis(self) -> dict:
+        self._odbierz_wynik()
         pozostalo = None
         if self._koniec_splywu is not None:
             pozostalo = max(0, round((self._koniec_splywu - time.monotonic()) / self.tempo))
@@ -54,6 +61,7 @@ class Cykl:
             "nastepny_numer": self.magazyn.nastepny_numer(),
             "pozostalo_s": pozostalo,
             "komunikat": self.komunikat,
+            "wynik": self.magazyn.wynik(self.id_pomiaru) if self.krok == "wynik" else None,
         }
 
     def akcja(self, nazwa: str) -> None:
@@ -63,11 +71,13 @@ class Cykl:
             "probka_wsypana": self._probka_wsypana,
             "anuluj": self._anuluj,
             "ponow_zdjecie": self._ponow_zdjecie,
+            "dalej": self._dalej,
         }.get(nazwa)
         if obsluga is None:
             raise ValueError(f"Nieznana akcja: {nazwa}")
         if self.trwa:
             raise ValueError("Maszyna pracuje")
+        self._odbierz_wynik()
         obsluga()
 
     def _wymagaj(self, ekran: str) -> None:
@@ -140,11 +150,18 @@ class Cykl:
             self.komunikat = str(exc)
             return
         self.krok = "analiza"
+        self.wysylka.obudz()
 
     def _ponow_zdjecie(self) -> None:
         self._wymagaj("blad_zdjecia")
         self.krok = "zdjecie"
         self._uruchom(self._zrob_zdjecie())
+
+    def _dalej(self) -> None:
+        self._wymagaj("wynik")
+        self.numer_probki = None
+        self.id_pomiaru = None
+        self.krok = "gotowa"
 
     def _anuluj(self) -> None:
         self._wymagaj("wsyp")

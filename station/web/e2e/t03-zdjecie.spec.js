@@ -16,6 +16,6 @@ test('błąd zdjęcia daje ponowienie bez ruchu maszyny', async ({ page, request
   await sprawdzEkran(page)
   const przed = await (await request.get('/api/dev/historia')).json()
   await przyciskGlowny(page, 'PONÓW ZDJĘCIE')
-  await expect(page.getByRole('heading', { name: 'Analizuję…' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /DOBRA|ZŁA/ })).toBeVisible()
   expect(await (await request.get('/api/dev/historia')).json()).toEqual(przed)
 })

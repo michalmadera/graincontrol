@@ -58,6 +58,7 @@ const KROKI = [
   ['Rozgarnianie', ['splyw', 'rozgarnianie']],
   ['Zdjęcie', ['zdjecie', 'blad_zdjecia']],
   ['Analiza', ['analiza']],
+  ['Wynik', ['wynik']],
 ]
 
 function Kroki({ ekran }) {
