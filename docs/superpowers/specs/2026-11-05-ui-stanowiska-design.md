@@ -56,9 +56,9 @@ przebiegiem.
 |---|---|---|---|---|
 | 1 | Brak połączenia | „Brak połączenia z maszyną” | Ponawia połączenie z Moonrakerem | Stan `ready` → 2 lub 3; stan `shutdown` → Zatrzymana |
 | — | Zatrzymana | „Maszyna zatrzymana. Sprawdź, czy nic jej nie blokuje i czy nikt nie ma rąk w środku”, przycisk „Wznów” przytrzymywany 3 s | `printer.firmware_restart`, oczekiwanie na `ready` | Gotowość → 2, potem czyszczenie |
-| 2 | Kalibracja | „Maszyna musi się ustawić”, przycisk KALIBRUJ, potem postęp | `KALIBRUJ` | Sukces → 3 |
+| 2 | Kalibracja | „Potrzebna kalibracja”, przycisk KALIBRACJA, potem „Trwa kalibracja” | `KALIBRUJ` | Sukces → 3 |
 | 3 | Gotowa | Numer następnej próbki, przycisk NOWY POMIAR | Przy włączonym skanowaniu najpierw pole kodu | Naciśnięcie → 4 |
-| 4 | Przygotowanie | „Maszyna się ustawia” | `PRZYGOTUJ` | Sukces → 5 |
+| 4 | Przygotowanie | „Maszyna się przygotowuje” | `PRZYGOTUJ` | Sukces → 5 |
 | 5 | Wsyp próbkę | „Wsyp próbkę do lejka”, PRÓBKA WSYPANA, Anuluj | Czeka na potwierdzenie | Potwierdzenie → 6; Anuluj → 2 (`KALIBRUJ`, wg `opis_software.md` §5) |
 | 6 | Spływ | Odliczanie do końca spływu | Czeka zadany czas | Koniec → 7 |
 | 7 | Rozgarnianie | „Maszyna rozgarnia próbkę” | `POMIAR` | Sukces → 8 |

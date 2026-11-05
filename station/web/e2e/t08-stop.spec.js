@@ -31,10 +31,10 @@ test('STOP w ruchu: bez przytrzymania nic nie rusza, potem kalibracja na żądan
   await expect(page.getByRole('heading', { name: 'Maszyna zatrzymana' })).toBeVisible()
 
   await przytrzymaj(page, 3200)
-  await expect(page.getByRole('heading', { name: 'Maszyna musi się ustawić' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Potrzebna kalibracja' })).toBeVisible()
   expect(await historia(request)).toEqual(przed)     // restart, ale bez żadnego ruchu
 
-  await przyciskGlowny(page, 'USTAW MASZYNĘ')
+  await przyciskGlowny(page, 'KALIBRACJA')
   await expect(page.getByRole('heading', { name: 'Maszyna czyści stół' })).toBeVisible()
   await oproznijPudelko(page)
   await expect(page.getByRole('button', { name: 'NOWY POMIAR' })).toBeVisible()
@@ -43,7 +43,7 @@ test('STOP w ruchu: bez przytrzymania nic nie rusza, potem kalibracja na żądan
 test('STOP jest dostępny na każdym ekranie cyklu', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('button', { name: 'STOP' })).toBeVisible()
-  await przyciskGlowny(page, 'USTAW MASZYNĘ')
+  await przyciskGlowny(page, 'KALIBRACJA')
   await expect(page.getByRole('button', { name: 'STOP' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Maszyna gotowa' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'STOP' })).toBeVisible()
@@ -60,6 +60,6 @@ test('błąd makra: komunikat bez nazw makr, odblokowanie, kalibracja, czyszczen
   await expect(page.getByText('Zabezpieczenie zatrzymało ruch maszyny.')).toBeVisible()
   await sprawdzEkran(page)
   await przyciskGlowny(page, 'ODBLOKUJ MASZYNĘ')
-  await przyciskGlowny(page, 'USTAW MASZYNĘ')
+  await przyciskGlowny(page, 'KALIBRACJA')
   await oproznijPudelko(page)
 })

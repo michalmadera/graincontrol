@@ -31,14 +31,14 @@ test.afterEach(async () => { if (proces && proces.exitCode === null) await wylac
 test('nagły restart stacji w trakcie cyklu: czyszczenie, a numer się nie powtarza', async ({ page, request }) => {
   await wlacz(request)
   await page.goto(ADRES)
-  await przyciskGlowny(page, 'USTAW MASZYNĘ')
+  await przyciskGlowny(page, 'KALIBRACJA')
   await przyciskGlowny(page, 'NOWY POMIAR')
   await expect(page.getByRole('heading', { name: 'Wsyp próbkę do lejka' })).toBeVisible()
   await wylacz()
   await expect(page.getByRole('heading', { name: 'Brak połączenia ze stacją' })).toBeVisible()
 
   await wlacz(request)
-  await przyciskGlowny(page, 'USTAW MASZYNĘ')       // atrapa maszyny wstała od zera, jak po zaniku prądu
+  await przyciskGlowny(page, 'KALIBRACJA')       // atrapa maszyny wstała od zera, jak po zaniku prądu
   await expect(page.getByRole('heading', { name: 'Maszyna czyści stół' })).toBeVisible()
   await oproznijPudelko(page)
   await expect(page.getByText('Następna próbka: nr 2')).toBeVisible()

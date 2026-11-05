@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
 
-export const SERWIS = 'http://127.0.0.1:8102'
+export const SERWIS = 'http://127.0.0.1:8106'
 
 export async function reset(request) {
   const odp = await request.post('/api/dev/reset')
@@ -16,7 +16,7 @@ export async function przyciskGlowny(page, nazwa) {
 
 export async function skalibruj(page) {
   await page.goto('/')
-  await przyciskGlowny(page, 'USTAW MASZYNĘ')
+  await przyciskGlowny(page, 'KALIBRACJA')
   await expect(page.getByRole('heading', { name: 'Maszyna gotowa' })).toBeVisible()
 }
 

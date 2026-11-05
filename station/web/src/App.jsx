@@ -110,7 +110,7 @@ function Logo({ wyslij }) {
 }
 
 const KROKI = [
-  ['Ustawienie', ['przygotowanie']],
+  ['Przygotowanie', ['przygotowanie']],
   ['Wsyp próbkę', ['wsyp']],
   ['Rozgarnianie', ['splyw', 'rozgarnianie']],
   ['Zdjęcie', ['zdjecie', 'blad_zdjecia']],

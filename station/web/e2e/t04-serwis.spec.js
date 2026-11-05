@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 
-const SERWIS = 'http://127.0.0.1:8102'
+const SERWIS = 'http://127.0.0.1:8106'
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32)])
 
 function formularz(id) {

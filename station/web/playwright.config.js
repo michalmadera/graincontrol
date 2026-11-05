@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const tutaj = path.dirname(fileURLToPath(import.meta.url))
 export const PORT = 8101
-export const PORT_SERWISU = 8102
+export const PORT_SERWISU = 8106
 
 // Jeden proces backendu i jeden stan, więc testy idą kolejno, a każdy zaczyna od /api/dev/reset.
 export default defineConfig({

@@ -34,7 +34,7 @@ test.afterAll(() => { procesy.forEach((p) => p.kill('SIGKILL')); procesy = [] })
 
 test('przez klienta Moonrakera: kalibracja i STOP z tego samego ekranu', async ({ page }) => {
   await page.goto(ADRES)
-  await przyciskGlowny(page, 'USTAW MASZYNĘ')
+  await przyciskGlowny(page, 'KALIBRACJA')
   await expect(page.getByRole('heading', { name: 'Maszyna gotowa' })).toBeVisible()
   await przyciskGlowny(page, 'NOWY POMIAR')
   await expect(page.getByRole('heading', { name: 'Wsyp próbkę do lejka' })).toBeVisible()
