@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const tutaj = path.dirname(fileURLToPath(import.meta.url))
 export const PORT = 8101
+export const PORT_SERWISU = 8102
 
 // Jeden proces backendu i jeden stan, więc testy idą kolejno, a każdy zaczyna od /api/dev/reset.
 export default defineConfig({
@@ -19,11 +20,20 @@ export default defineConfig({
     hasTouch: true,
     screenshot: 'only-on-failure',
   },
-  webServer: {
-    command: path.join(tutaj, 'e2e', 'uruchom-backend.sh'),
-    url: `http://127.0.0.1:${PORT}/api/stan`,
-    reuseExistingServer: false,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  },
+  webServer: [
+    {
+      command: path.join(tutaj, 'e2e', 'uruchom-backend.sh'),
+      url: `http://127.0.0.1:${PORT}/api/stan`,
+      reuseExistingServer: false,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+    {
+      command: path.join(tutaj, 'e2e', 'uruchom-serwis.sh'),
+      url: `http://127.0.0.1:${PORT_SERWISU}/health`,
+      reuseExistingServer: false,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  ],
 })

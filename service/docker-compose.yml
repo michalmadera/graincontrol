@@ -1,0 +1,22 @@
+# docker compose --profile mock up --build
+# docker compose --profile gpu up --build     (wymaga NVIDIA Container Toolkit)
+x-serwis: &serwis
+  build: { context: ., target: mock }
+  ports: ["${ANALIZA_PORT:-8000}:8000"]
+  environment:
+    ANALIZA_OPOZNIENIE_S: "${ANALIZA_OPOZNIENIE_S:-10}"
+  volumes: ["dane:/dane"]
+  restart: unless-stopped
+
+services:
+  analiza-mock:
+    <<: *serwis
+    profiles: [mock]
+  analiza-gpu:
+    <<: *serwis
+    profiles: [gpu]
+    build: { context: ., target: gpu }
+    gpus: all
+
+volumes:
+  dane:
