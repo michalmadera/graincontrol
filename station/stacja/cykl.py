@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -18,6 +19,9 @@ log = logging.getLogger(__name__)
 
 SZCZELINA_CZYSZCZENIA = 0.5
 KROKI_RUCHU = ("przygotowanie", "rozgarnianie", "czyszczenie", "kalibracja")
+AKCJE_Z_DANYMI = ("nowy_pomiar", "serwis_ruch", "serwis_ustawienia", "serwis_reset_numeracji")
+RUCHY_SERWISOWE = ("GORA_5MM", "DOL_5MM", "GORA_1MM", "DOL_1MM")
+KOD_PARTII = re.compile(r"[A-Za-z0-9]{10}")     # BR-010
 KOMUNIKAT_PRZERWANIA = "Poprzednia operacja została przerwana."
 
 
@@ -53,6 +57,7 @@ class Cykl:
         self.numer_probki: int | None = dziennik.get("numer_probki")
         self.id_pomiaru: str | None = dziennik.get("id_pomiaru")
         self.komunikat: str | None = dziennik.get("komunikat")
+        self.kod_partii: str | None = dziennik.get("kod_partii")
         self._krok = self._krok_po_restarcie(dziennik.get("krok", "gotowa"))
         self._koniec_splywu: float | None = None
         self._zadanie: asyncio.Task | None = None
@@ -82,7 +87,8 @@ class Cykl:
     def krok(self, krok: str) -> None:
         self._krok = krok
         self.magazyn.zapisz_cykl({"krok": krok, "numer_probki": self.numer_probki,
-                                  "id_pomiaru": self.id_pomiaru, "komunikat": self.komunikat})
+                                  "id_pomiaru": self.id_pomiaru, "komunikat": self.komunikat,
+                                  "kod_partii": self.kod_partii})
 
     @property
     def trwa(self) -> bool:
@@ -109,10 +115,15 @@ class Cykl:
             return "oczekiwanie" if stan.w_toku else "blad"
         # Kalibracja wynika ze stanu maszyny, nie z pamięci aplikacji: restart Klippera kasuje
         # skalibrowany, więc tej ścieżki nie da się ominąć.
+        if self.krok == "serwis":
+            return "serwis"
         if not stan.skalibrowany:
             return "kalibracja"
         # Wsypanie ma sens tylko na wysokości załadunku; inaczej stół jest w nieznanej pozycji.
         if self.krok == "wsyp" and not stan.przygotowany:
+            return "kalibracja"
+        # Nowa próbka nie może spaść na starą, niezależnie od drogi, którą tu dotarliśmy.
+        if self.krok == "gotowa" and self.magazyn.brudny():
             return "kalibracja"
         # Licznik leży na dysku, więc blokada wraca też po restarcie stacji.
         if self.krok == "gotowa" and self._trzeba_oproznic():
@@ -144,9 +155,11 @@ class Cykl:
             "w_kolejce": len(self.kolejka.oczekujace()),
             "kolejka_pelna": self._kolejka_pelna(),
             "ostatnie_wyniki": self.magazyn.ostatnie_wyniki(),
+            "skanowanie_wlaczone": self.magazyn.ustawienia["skanowanie_wlaczone"],
+            "ustawienia": self.magazyn.ustawienia if ekran == "serwis" else None,
         }
 
-    def akcja(self, nazwa: str) -> None:
+    def akcja(self, nazwa: str, dane: dict | None = None) -> None:
         obsluga = {
             "kalibruj": self._kalibruj,
             "nowy_pomiar": self._nowy_pomiar,
@@ -158,13 +171,21 @@ class Cykl:
             "oproznione": self._oproznione,
             "wznow": self._wznow,
             "odblokuj": self._odblokuj,
+            "serwis_wejdz": self._serwis_wejdz,
+            "serwis_wyjdz": self._serwis_wyjdz,
+            "serwis_ruch": self._serwis_ruch,
+            "serwis_ustawienia": self._serwis_ustawienia,
+            "serwis_reset_numeracji": self._serwis_reset_numeracji,
         }.get(nazwa)
         if obsluga is None:
             raise ValueError(f"Nieznana akcja: {nazwa}")
         if self.trwa:
             raise ValueError("Maszyna pracuje")
         self._odbierz_wynik()
-        obsluga()
+        if nazwa in AKCJE_Z_DANYMI:
+            obsluga(dane or {})
+        else:
+            obsluga()
 
     # ------------------------------------------------------------- STOP i błędy
     async def stop(self) -> str:
@@ -261,14 +282,59 @@ class Cykl:
         self._wymagaj("oproznij")
         self.magazyn.po_oproznieniu()
 
+    # ------------------------------------------------------------- tryb serwisowy
+    def _serwis_wejdz(self) -> None:
+        if self._ekran() not in ("gotowa", "kalibracja", "oproznij"):
+            raise ValueError("Tryb serwisowy jest niedostępny w trakcie pomiaru")
+        self.komunikat = None
+        self.krok = "serwis"
+
+    def _serwis_wyjdz(self) -> None:
+        self._wymagaj("serwis")
+        self.komunikat = None
+        self.krok = "gotowa"
+
+    def _serwis_ruch(self, dane: dict) -> None:
+        self._wymagaj("serwis")
+        ruch = dane.get("ruch")
+        if ruch not in RUCHY_SERWISOWE:
+            raise ValueError(f"Nieznany ruch: {ruch}")
+        self.komunikat = None
+        self._uruchom(self._wykonaj_ruch(ruch))
+
+    async def _wykonaj_ruch(self, ruch: str) -> None:
+        try:
+            await self.maszyna.wywolaj(ruch)
+        except (BladMakra, BrakPolaczenia) as exc:
+            # Krok odrzucony nie blokuje maszyny; gdyby zablokował, _ekran pokaże ekran błędu.
+            log.warning("Ruch serwisowy %s: %s", ruch, exc)
+            self.komunikat = tekst_bledu(str(exc))
+
+    def _serwis_ustawienia(self, dane: dict) -> None:
+        self._wymagaj("serwis")
+        self.magazyn.zmien_ustawienia(dane)
+
+    def _serwis_reset_numeracji(self, dane: dict) -> None:
+        self._wymagaj("serwis")
+        if dane.get("potwierdzam") is not True:
+            raise ValueError("Reset numeracji wymaga potwierdzenia")
+        self.magazyn.zresetuj_numeracje()
+
     # ------------------------------------------------------------- pomiar
     def _kolejka_pelna(self) -> bool:
         return len(self.kolejka.oczekujace()) >= self.magazyn.ustawienia["limit_kolejki"]
 
-    def _nowy_pomiar(self) -> None:
+    def _nowy_pomiar(self, dane: dict) -> None:
         self._wymagaj("gotowa")
         if self._kolejka_pelna():
             raise ValueError("Kolejka pełna")
+        kod = dane.get("kod_partii")
+        if self.magazyn.ustawienia["skanowanie_wlaczone"]:
+            if not (isinstance(kod, str) and KOD_PARTII.fullmatch(kod)):
+                raise ValueError("Błędny kod partii: wymagane 10 liter lub cyfr")
+            self.kod_partii = kod
+        else:
+            self.kod_partii = None
         self.numer_probki = self.magazyn.pobierz_numer()
         self.id_pomiaru = str(uuid.uuid4())
         # Przed pierwszym ruchem: każde przerwanie od tej chwili wymusi czyszczenie.
@@ -312,6 +378,7 @@ class Cykl:
             self.kolejka.dodaj(zdjecie, {
                 "id_pomiaru": self.id_pomiaru,
                 "numer_probki": self.numer_probki,
+                "kod_partii": self.kod_partii,
                 "id_stacji": self.magazyn.ustawienia["id_stacji"],
                 "czas_zdjecia": datetime.now(timezone.utc).isoformat(),
             })

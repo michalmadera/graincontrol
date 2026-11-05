@@ -5,8 +5,8 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Body, FastAPI, HTTPException
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -115,12 +115,17 @@ def create_app(konfiguracja: Konfiguracja | None = None) -> FastAPI:
         return {**app.state.cykl.opis(), "wynik_stop": wynik}
 
     @app.post("/api/akcja/{nazwa}")
-    async def akcja(nazwa: str) -> dict:
+    async def akcja(nazwa: str, dane: dict | None = Body(default=None)) -> dict:
         try:
-            app.state.cykl.akcja(nazwa)
+            app.state.cykl.akcja(nazwa, dane)
         except ValueError as exc:
             raise HTTPException(409, str(exc))
         return app.state.cykl.opis()
+
+    @app.get("/api/podglad.mjpg")
+    async def podglad() -> StreamingResponse:
+        return StreamingResponse(app.state.cykl.kamera.menedzer.preview_stream(),
+                                 media_type="multipart/x-mixed-replace; boundary=frame")
 
     if STATIC.exists():
         app.mount("/assets", StaticFiles(directory=STATIC / "assets"), name="assets")

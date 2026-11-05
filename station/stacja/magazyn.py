@@ -14,6 +14,27 @@ USTAWIENIA_DOMYSLNE = {
     "limit_kolejki": 50,
     "oproznianie_co_n": 1,
     "id_stacji": "stacja-1",
+    "adres_serwisu": None,      # None: adres z konfiguracji startowej
+}
+
+
+def _liczba(wartosc) -> bool:
+    return isinstance(wartosc, (int, float)) and not isinstance(wartosc, bool)
+
+
+def _calkowita(wartosc) -> bool:
+    return isinstance(wartosc, int) and not isinstance(wartosc, bool)
+
+
+_WALIDACJA = {
+    "skanowanie_wlaczone": lambda w: isinstance(w, bool),
+    "czas_splywu_s": lambda w: _liczba(w) and w >= 0,
+    # 0,5 mm to minimum z printer.cfg (szczelina_min).
+    "szczelina_mm": lambda w: w is None or (_liczba(w) and w >= 0.5),
+    "limit_kolejki": lambda w: _calkowita(w) and w >= 1,
+    "oproznianie_co_n": lambda w: _calkowita(w) and w >= 1,
+    "id_stacji": lambda w: isinstance(w, str) and bool(w),
+    "adres_serwisu": lambda w: w is None or (isinstance(w, str) and w.startswith(("http://", "https://"))),
 }
 
 
@@ -48,6 +69,10 @@ class Magazyn:
         self._dane["nastepny_numer"] = numer + 1
         self.zapisz()
         return numer
+
+    def zresetuj_numeracje(self) -> None:
+        self._dane["nastepny_numer"] = 1
+        self.zapisz()
 
     # ------------------------------------------------------------- dziennik cyklu
     def cykl(self) -> dict:
@@ -97,8 +122,11 @@ class Magazyn:
         return {**USTAWIENIA_DOMYSLNE, **self._dane["ustawienia"]}
 
     def zmien_ustawienia(self, zmiany: dict) -> None:
-        nieznane = set(zmiany) - set(USTAWIENIA_DOMYSLNE)
-        if nieznane:
-            raise ValueError(f"Nieznane ustawienia: {sorted(nieznane)}")
+        for nazwa, wartosc in zmiany.items():
+            sprawdz = _WALIDACJA.get(nazwa)
+            if sprawdz is None:
+                raise ValueError(f"Nieznane ustawienie: {nazwa}")
+            if not sprawdz(wartosc):
+                raise ValueError(f"Zła wartość ustawienia {nazwa}: {wartosc!r}")
         self._dane["ustawienia"].update(zmiany)
         self.zapisz()

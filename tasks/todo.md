@@ -18,10 +18,10 @@ Plan: `tasks/plan.md`. Każde zadanie: pytest + Playwright na atrapach, commit l
 - [x] T7 Czyszczenie, pudełko, brudny stół
 - [x] T8 STOP i błędy makr
 - [x] T9 Odtwarzanie po restarcie backendu
-- [ ] Punkt kontrolny C
+- [x] Punkt kontrolny C
 
 ## Faza 4: domknięcie
-- [ ] T10 Tryb serwisowy i skanowanie
+- [x] T10 Tryb serwisowy i skanowanie
 - [ ] T11 Klient Moonrakera
 - [ ] T12 Docker GPU i dokumentacja
 - [ ] T13 Odbiór

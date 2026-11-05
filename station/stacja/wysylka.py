@@ -60,6 +60,9 @@ class Wysylka:
                     self.serwer_dostepny = False
                     await asyncio.sleep(ODSTEP_PONOWIEN_S * self.tempo)
 
+    def _adres(self) -> str:
+        return self.magazyn.ustawienia["adres_serwisu"] or self.adres
+
     async def _wyslij(self, klient: httpx.AsyncClient, wpis: Wpis) -> None:
         try:
             pomiar = wpis.pomiar
@@ -73,7 +76,7 @@ class Wysylka:
             self.kolejka.odrzuc(wpis)
             return
 
-        odpowiedz = await klient.post(f"{self.adres}/api/v1/pomiary", files=pliki, data=dane)
+        odpowiedz = await klient.post(f"{self._adres()}/api/v1/pomiary", files=pliki, data=dane)
         if odpowiedz.status_code >= 500:
             raise BladSerwera(odpowiedz.status_code)
         if odpowiedz.status_code >= 400:

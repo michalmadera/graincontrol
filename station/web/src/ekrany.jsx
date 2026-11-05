@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Tresc } from './App.jsx'
 
 function Kalibracja({ stan, wyslij }) {
@@ -17,9 +17,24 @@ function Gotowa({ stan, wyslij }) {
     <Tresc tytul="Maszyna gotowa" opis={`Następna próbka: nr ${stan.nastepny_numer}`}>
       {stan.kolejka_pelna
         ? <p className="ostrzezenie" role="alert">Kolejka pełna — powiadom serwis</p>
-        : <button className="glowny" onClick={() => wyslij('nowy_pomiar')}>NOWY POMIAR</button>}
+        : stan.skanowanie_wlaczone
+          ? <PoleSkanu onKod={(kod) => wyslij('nowy_pomiar', { kod_partii: kod })} />
+          : <button className="glowny" onClick={() => wyslij('nowy_pomiar')}>NOWY POMIAR</button>}
       <OstatnieWyniki wyniki={stan.ostatnie_wyniki} />
     </Tresc>
+  )
+}
+
+// Czytnik USB działa jak klawiatura i kończy kod Enterem, więc pole musi trzymać fokus.
+function PoleSkanu({ onKod }) {
+  const [kod, setKod] = useState('')
+  const pole = useRef(null)
+  useEffect(() => { pole.current?.focus() })
+  return (
+    <form className="skan" onSubmit={(e) => { e.preventDefault(); onKod(kod); setKod('') }}>
+      <label htmlFor="kod">Zeskanuj kod partii</label>
+      <input id="kod" ref={pole} value={kod} autoComplete="off" onChange={(e) => setKod(e.target.value)} />
+    </form>
   )
 }
 
@@ -163,6 +178,53 @@ function Blad({ stan, wyslij }) {
   )
 }
 
+function Licznik({ etykieta, wartosc, krok, min, jednostka, onZmiana }) {
+  return (
+    <div className="pole">
+      <span className="etykieta">{etykieta}</span>
+      <button aria-label={`${etykieta}: mniej`} onClick={() => onZmiana(Math.max(min, wartosc - krok))}>−</button>
+      <output aria-label={etykieta}>{wartosc}{jednostka}</output>
+      <button aria-label={`${etykieta}: więcej`} onClick={() => onZmiana(wartosc + krok)}>+</button>
+    </div>
+  )
+}
+
+function Serwis({ stan, wyslij }) {
+  const [potwierdzenie, setPotwierdzenie] = useState(false)
+  const u = stan.ustawienia
+  const zmien = (zmiany) => wyslij('serwis_ustawienia', zmiany)
+  return (
+    <section className="serwis">
+      <div className="kolumna">
+        <h1>Tryb serwisowy</h1>
+        <div className="siatka">
+          {['GORA_5MM', 'DOL_5MM', 'GORA_1MM', 'DOL_1MM'].map((ruch) => (
+            <button key={ruch} disabled={stan.trwa} onClick={() => wyslij('serwis_ruch', { ruch })}>
+              {{ GORA_5MM: 'Stół w górę 5 mm', DOL_5MM: 'Stół w dół 5 mm', GORA_1MM: 'Stół w górę 1 mm', DOL_1MM: 'Stół w dół 1 mm' }[ruch]}
+            </button>
+          ))}
+        </div>
+        {stan.komunikat && <p className="ostrzezenie maly" role="alert">{stan.komunikat}</p>}
+        <img className="podglad" src="/api/podglad.mjpg" alt="Podgląd kamery" />
+      </div>
+      <div className="kolumna">
+        <Licznik etykieta="Czas spływu" wartosc={u.czas_splywu_s} krok={5} min={0} jednostka=" s" onZmiana={(w) => zmien({ czas_splywu_s: w })} />
+        <Licznik etykieta="Szczelina" wartosc={u.szczelina_mm ?? 0.5} krok={0.5} min={0.5} jednostka=" mm" onZmiana={(w) => zmien({ szczelina_mm: w })} />
+        <Licznik etykieta="Opróżnianie co" wartosc={u.oproznianie_co_n} krok={1} min={1} jednostka="" onZmiana={(w) => zmien({ oproznianie_co_n: w })} />
+        <Licznik etykieta="Limit kolejki" wartosc={u.limit_kolejki} krok={10} min={1} jednostka="" onZmiana={(w) => zmien({ limit_kolejki: w })} />
+        <button className={u.skanowanie_wlaczone ? 'przelacznik wlaczony' : 'przelacznik'} aria-pressed={u.skanowanie_wlaczone}
+                onClick={() => zmien({ skanowanie_wlaczone: !u.skanowanie_wlaczone })}>
+          Skanowanie kodów: {u.skanowanie_wlaczone ? 'włączone' : 'wyłączone'}
+        </button>
+        {potwierdzenie
+          ? <button className="przelacznik niebezpieczny" onClick={() => { setPotwierdzenie(false); wyslij('serwis_reset_numeracji', { potwierdzam: true }) }}>Potwierdź reset numeracji</button>
+          : <button className="przelacznik" onClick={() => setPotwierdzenie(true)}>Następny numer: {stan.nastepny_numer} (reset)</button>}
+        <button className="glowny maly" disabled={stan.trwa} onClick={() => wyslij('serwis_wyjdz')}>WYJDŹ</button>
+      </div>
+    </section>
+  )
+}
+
 export const EKRANY = {
   brak_polaczenia: BrakPolaczenia,
   kalibracja: Kalibracja,
@@ -181,4 +243,5 @@ export const EKRANY = {
   uruchamianie: Uruchamianie,
   blad: Blad,
   oczekiwanie: Oczekiwanie,
+  serwis: Serwis,
 }

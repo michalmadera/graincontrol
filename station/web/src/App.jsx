@@ -57,7 +57,7 @@ export default function App() {
   return (
     <div className="aplikacja">
       <header className="pasek">
-        <span className="tytul">GrainControl</span>
+        <Logo wyslij={wyslij} />
         {stan.numer_probki && <span className="numer">Próbka nr {stan.numer_probki}</span>}
         {(!stan.serwer_dostepny || stan.w_kolejce > 1) && (
           <span className={stan.serwer_dostepny ? 'lacznosc' : 'lacznosc offline'}>
@@ -72,6 +72,20 @@ export default function App() {
         {blad && <p className="blad" role="alert">{blad}</p>}
       </main>
     </div>
+  )
+}
+
+const CZAS_WEJSCIA_SERWIS_MS = 5000
+
+// Wejście ukryte przed robotnikiem: przytrzymanie napisu przez 5 s (jak E-07 w spec-operacyjny).
+function Logo({ wyslij }) {
+  const licznik = useRef(null)
+  const pusc = () => clearTimeout(licznik.current)
+  return (
+    <span className="tytul" data-testid="logo"
+          onPointerDown={() => { licznik.current = setTimeout(() => wyslij('serwis_wejdz'), CZAS_WEJSCIA_SERWIS_MS) }}
+          onPointerUp={pusc} onPointerLeave={pusc} onPointerCancel={pusc}
+          onContextMenu={(e) => e.preventDefault()}>GrainControl</span>
   )
 }
 

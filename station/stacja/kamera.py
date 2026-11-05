@@ -10,6 +10,7 @@ _ACQUISITION = Path(__file__).resolve().parents[2] / "acquisition"
 if str(_ACQUISITION) not in sys.path:
     sys.path.insert(0, str(_ACQUISITION))
 
+from server.camera import CameraBusy, CameraManager, make_backend  # noqa: E402
 from server.capture import CaptureController  # noqa: E402
 from server.config import load_config  # noqa: E402
 
@@ -29,6 +30,8 @@ class Kamera:
     def __init__(self, katalog: Path) -> None:
         konfiguracja = dataclasses.replace(load_config(), data_root=Path(katalog) / "zdjecia")
         self.kontroler = CaptureController(konfiguracja)
+        # Podgląd i zdjęcie korzystają z jednego urządzenia, więc dzielą menedżera z acquisition/.
+        self.menedzer = CameraManager(make_backend(konfiguracja))
         self._blad: str | None = None
 
     def wymus_blad(self, tresc: str) -> None:
@@ -44,8 +47,8 @@ class Kamera:
                 # Odniesienie macierzy CCM: pierwsze ujęcie od startu aplikacji (Projekt §8).
                 self.kontroler.start_session()
             self.kontroler.set_label(f"probka_{numer}")
-            wynik = await self.kontroler.shoot()
-        except RuntimeError as exc:
+            wynik = await self.menedzer.run_exclusive(lambda: self.kontroler.shoot())
+        except (CameraBusy, RuntimeError) as exc:
             raise BladZdjecia(str(exc)) from exc
         if not wynik["accepted"]:
             raise BladZdjecia("; ".join(wynik["violations"]) or "Zdjęcie niezgodne z profilem")
